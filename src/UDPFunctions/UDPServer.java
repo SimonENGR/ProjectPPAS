@@ -32,13 +32,16 @@ public class UDPServer {
         return new RegistrationInfo(uniqueName, role, ipAddress, udpPort, tcpPort);
     }
 
-
     public static void main(String[] args) throws IOException {
         // Create a DatagramSocket to listen on port 420
         DatagramSocket ds = new DatagramSocket(420);
         byte[] receive = new byte[65535];
 
-        DatagramPacket dpReceive = null;
+        DatagramPacket dpReceive;
+
+        UDPServer server = new UDPServer();  // Create an instance of UDPServer for parsing
+
+        System.out.println("Server listening on port 420...");
 
         while (true) {
             // Create a DatagramPacket to receive data
@@ -46,16 +49,26 @@ public class UDPServer {
             ds.receive(dpReceive);
 
             // Convert byte array to string and print received data
-            String msg = new String(receive, 0, dpReceive.getLength());
-            System.out.println("Client: " + msg);
+            String msg = new String(dpReceive.getData(), 0, dpReceive.getLength());
+            System.out.println("Received message: " + msg);
 
             // Exit if client sends "bye"
-            if (msg.equals("bye")) {
+            if (msg.equalsIgnoreCase("bye")) {
                 System.out.println("Client sent bye...EXITING");
                 break;
             }
 
-            // Clear buffer
+            // Try to parse the registration message
+            try {
+                RegistrationInfo regInfo = server.parseRegistrationMessage(msg);
+                System.out.println("Parsed Registration Information: " + regInfo);
+                // Here, you can add code to handle the registration (e.g., add to a registry map)
+            } catch (IllegalArgumentException e) {
+                System.err.println("Error parsing registration message: " + e.getMessage());
+                // Optionally, send an error response back to the client
+            }
+
+            // Clear the buffer for the next message
             receive = new byte[65535];
         }
         ds.close();

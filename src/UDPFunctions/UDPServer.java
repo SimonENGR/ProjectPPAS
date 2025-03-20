@@ -5,6 +5,9 @@ import Utils.RegistrationInfo;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
+import java.io.PrintWriter;
+import java.io.FileWriter;
+import java.io.BufferedWriter;
 
 public class UDPServer {
 
@@ -30,6 +33,22 @@ public class UDPServer {
         }
 
         return new RegistrationInfo(uniqueName, role, ipAddress, udpPort, tcpPort);
+    }
+
+    // Registers the account by appending the client name and role to the accounts.txt file
+    public void registerAccount(RegistrationInfo regInfo) {
+
+        String filePath = "src/resources/accounts.txt";
+        String entry = regInfo.getUniqueName() + "," + regInfo.getRole();
+        try (FileWriter fw = new FileWriter(filePath, true);
+             BufferedWriter bw = new BufferedWriter(fw);
+             PrintWriter out = new PrintWriter(bw)) {
+
+            out.println(entry);
+            System.out.println("Account registered: " + entry);
+        } catch (IOException e) {
+            System.err.println("Error writing to accounts file: " + e.getMessage());
+        }
     }
 
     public static void main(String[] args) throws IOException {
@@ -62,7 +81,7 @@ public class UDPServer {
             try {
                 RegistrationInfo regInfo = server.parseRegistrationMessage(msg);
                 System.out.println("Parsed Registration Information: " + regInfo);
-                // Here, you can add code to handle the registration (e.g., add to a registry map)
+                server.registerAccount(regInfo);
             } catch (IllegalArgumentException e) {
                 System.err.println("Error parsing registration message: " + e.getMessage());
                 // Optionally, send an error response back to the client

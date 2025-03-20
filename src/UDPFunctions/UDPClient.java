@@ -1,3 +1,5 @@
+package UDPFunctions;
+
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -20,12 +22,14 @@ public class UDPClient {
             buf = inp.getBytes(); // Encode to Bytes
 
             // Create a DatagramPacket and send data
-            DatagramPacket dpSend = new DatagramPacket(buf, buf.length, ip, 1234);
+            DatagramPacket dpSend = new DatagramPacket(buf, buf.length, ip, 420);
             ds.send(dpSend);
 
             // Exit loop if user inputs "bye"
-            if (inp.equals("bye"))
+            if (inp.equals("bye")) {
+                System.out.println("Client sent bye...EXITING");
                 break;
+            }
         }
 
         ds.close();

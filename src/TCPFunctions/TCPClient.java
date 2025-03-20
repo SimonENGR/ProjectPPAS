@@ -12,7 +12,7 @@ import java.util.Scanner;
 
 public class TCPClient {
     private static final String SERVER_IP = "127.0.0.1"; // Change this to your server's IP
-    private static final int SERVER_PORT = 443;         // Change this to your desired port
+    private static final int SERVER_PORT = 420;         // Change this to your desired port
 
     private Socket socket;
     private Scanner scanner;

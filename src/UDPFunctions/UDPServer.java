@@ -5,9 +5,11 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 
 public class UDPServer {
+
+
     public static void main(String[] args) throws IOException {
-        // Create a DatagramSocket to listen on port 1234
-        DatagramSocket ds = new DatagramSocket(1234);
+        // Create a DatagramSocket to listen on port 420
+        DatagramSocket ds = new DatagramSocket(420);
         byte[] receive = new byte[65535];
 
         DatagramPacket dpReceive = null;

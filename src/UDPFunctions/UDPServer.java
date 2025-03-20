@@ -1,10 +1,36 @@
 package UDPFunctions;
 
+import Utils.RegistrationInfo;
+
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 
 public class UDPServer {
+
+    public RegistrationInfo parseRegistrationMessage(String message) throws IllegalArgumentException {
+        // Expected message format: "uniqueName,role,ipAddress,udpPort,tcpPort"
+        String[] tokens = message.split(",");
+
+        if (tokens.length != 5) {
+            throw new IllegalArgumentException("Invalid registration message format");
+        }
+
+        String uniqueName = tokens[0].trim();
+        String role = tokens[1].trim().toLowerCase(); // Normalize role
+        String ipAddress = tokens[2].trim();
+
+        int udpPort;
+        int tcpPort;
+        try {
+            udpPort = Integer.parseInt(tokens[3].trim());
+            tcpPort = Integer.parseInt(tokens[4].trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("UDP and TCP ports must be integers", e);
+        }
+
+        return new RegistrationInfo(uniqueName, role, ipAddress, udpPort, tcpPort);
+    }
 
 
     public static void main(String[] args) throws IOException {

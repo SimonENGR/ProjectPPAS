@@ -2,15 +2,21 @@ package UDPFunctions;
 
 import Utils.RegistrationInfo;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
-import java.io.PrintWriter;
-import java.io.FileWriter;
-import java.io.BufferedWriter;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class UDPServer {
+
+    private static final int MAX_USERS = 10;
+    private static final String FILE_PATH = "src/resources/accounts.txt";
 
     // Thread-safe counter for request numbers.
     private static AtomicInteger requestCounter = new AtomicInteger(1);
@@ -39,8 +45,59 @@ public class UDPServer {
         return new RegistrationInfo(uniqueName, role, ipAddress, udpPort, tcpPort);
     }
 
+    // Checks if the capacity is reached by counting the number of lines in the file.
+    private boolean isCapacityReached() {
+        File file = new File(FILE_PATH);
+        if (!file.exists()) {
+            return false;
+        }
+        int count = 0;
+        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
+            while (br.readLine() != null) {
+                count++;
+            }
+        } catch (IOException e) {
+            System.err.println("Error reading accounts file: " + e.getMessage());
+            // In case of an error, it might be safer to assume capacity is reached.
+            return true;
+        }
+        return count >= MAX_USERS;
+    }
+
+    // Checks if a given unique name already exists in the accounts file.
+    private boolean isDuplicateName(String uniqueName) {
+        File file = new File(FILE_PATH);
+        if (!file.exists()) {
+            return false;
+        }
+        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                // Expecting line format: "RQ#<number>,uniqueName,role"
+                String[] tokens = line.split(",");
+                if (tokens.length >= 2 && tokens[1].trim().equalsIgnoreCase(uniqueName)) {
+                    return true;
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error reading accounts file: " + e.getMessage());
+            // In case of error, assume duplicate to be safe.
+            return true;
+        }
+        return false;
+    }
+
     // Registers the account by appending the client name and role to the accounts.txt file
     public void registerAccount(RegistrationInfo regInfo) {
+
+        if (isCapacityReached()) {
+            System.err.println("Registration denied: maximum user capacity reached.");
+            return;
+        }
+        if (isDuplicateName(regInfo.getUniqueName())) {
+            System.err.println("Registration denied: unique name '" + regInfo.getUniqueName() + "' is already registered.");
+            return;
+        }
 
         int requestNumber = requestCounter.getAndIncrement();
 
@@ -92,10 +149,8 @@ public class UDPServer {
                 server.registerAccount(regInfo);
             } catch (IllegalArgumentException e) {
                 System.err.println("Error parsing registration message: " + e.getMessage());
-                // Optionally, send an error response back to the client
             }
 
-            // Clear the buffer for the next message
             receive = new byte[65535];
         }
         ds.close();

@@ -8,8 +8,12 @@ import java.net.DatagramSocket;
 import java.io.PrintWriter;
 import java.io.FileWriter;
 import java.io.BufferedWriter;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class UDPServer {
+
+    // Thread-safe counter for request numbers.
+    private static AtomicInteger requestCounter = new AtomicInteger(1);
 
     public RegistrationInfo parseRegistrationMessage(String message) throws IllegalArgumentException {
         // Expected message format: "uniqueName,role,ipAddress,udpPort,tcpPort"
@@ -38,8 +42,12 @@ public class UDPServer {
     // Registers the account by appending the client name and role to the accounts.txt file
     public void registerAccount(RegistrationInfo regInfo) {
 
+        int requestNumber = requestCounter.getAndIncrement();
+
         String filePath = "src/resources/accounts.txt";
-        String entry = regInfo.getUniqueName() + "," + regInfo.getRole();
+
+        String entry = regInfo.getUniqueName() + "," + regInfo.getRole() + ",RQ#" + requestNumber;
+
         try (FileWriter fw = new FileWriter(filePath, true);
              BufferedWriter bw = new BufferedWriter(fw);
              PrintWriter out = new PrintWriter(bw)) {

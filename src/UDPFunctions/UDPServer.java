@@ -16,22 +16,22 @@ public class UDPServer {
     private static AtomicInteger requestCounter = new AtomicInteger(1);
 
     public RegistrationInfo parseRegistrationMessage(String message) throws IllegalArgumentException {
-        // Expected message format: "uniqueName,role,ipAddress,udpPort,tcpPort"
+        // Expected message format: "register,uniqueName,role,ipAddress,udpPort,tcpPort"
         String[] tokens = message.split(",");
 
-        if (tokens.length != 5) {
+        if (tokens.length != 6) {
             throw new IllegalArgumentException("Invalid registration message format");
         }
 
-        String uniqueName = tokens[0].trim();
-        String role = tokens[1].trim().toLowerCase(); // Normalize role
-        String ipAddress = tokens[2].trim();
+        String uniqueName = tokens[1].trim();
+        String role = tokens[2].trim().toLowerCase(); // Normalize role
+        String ipAddress = tokens[3].trim();
 
         int udpPort;
         int tcpPort;
         try {
-            udpPort = Integer.parseInt(tokens[3].trim());
-            tcpPort = Integer.parseInt(tokens[4].trim());
+            udpPort = Integer.parseInt(tokens[4].trim());
+            tcpPort = Integer.parseInt(tokens[5].trim());
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("UDP and TCP ports must be integers", e);
         }
@@ -65,7 +65,7 @@ public class UDPServer {
             String line;
             while ((line = br.readLine()) != null) {
                 String[] tokens = line.split(",");
-                if (tokens.length >= 2 && tokens[1].trim().equalsIgnoreCase(uniqueName)) {
+                if (tokens.length >= 1 && tokens[0].trim().equalsIgnoreCase(uniqueName)) {
                     return true;
                 }
             }
@@ -101,6 +101,48 @@ public class UDPServer {
         }
     }
 
+    public void deregisterAccount(String uniqueName) {
+        File inputFile = new File(FILE_PATH);
+        File tempFile = new File("src/resources/temp_accounts.txt");
+
+        boolean found = false;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(inputFile));
+             PrintWriter writer = new PrintWriter(new FileWriter(tempFile))) {
+
+            String currentLine;
+            while ((currentLine = reader.readLine()) != null) {
+                // Assuming entry format: "uniqueName,role,RQ#<number>"
+                String[] tokens = currentLine.split(",");
+                if (tokens.length >= 1 && tokens[0].trim().equalsIgnoreCase(uniqueName)) {
+                    // Skip the line that matches the uniqueName (i.e., deregister it)
+                    found = true;
+                    continue;
+                }
+                writer.println(currentLine);
+            }
+        } catch (IOException e) {
+            System.err.println("Error processing accounts file: " + e.getMessage());
+            return;
+        }
+
+        // Replace the original file with the temp file.
+        if (!inputFile.delete()) {
+            System.err.println("Could not delete original accounts file.");
+            return;
+        }
+        if (!tempFile.renameTo(inputFile)) {
+            System.err.println("Could not rename temporary file.");
+            return;
+        }
+
+        if (found) {
+            System.out.println("Account deregistered: " + uniqueName);
+        } else {
+            System.err.println("Account not found: " + uniqueName);
+        }
+    }
+
     public static void main(String[] args) throws IOException {
         DatagramSocket ds = new DatagramSocket(420);
         byte[] receive = new byte[65535];
@@ -123,15 +165,30 @@ public class UDPServer {
                 break;
             }
 
-            // Increment request number here, since a request has been received
-            int requestNumber = requestCounter.getAndIncrement();
+            String[] tokens = msg.split(",");
+            if (tokens.length < 2) {
+                System.err.println("Invalid message format.");
+                continue;
+            }
 
-            try {
-                RegistrationInfo regInfo = server.parseRegistrationMessage(msg);
-                System.out.println("Parsed Registration Information: " + regInfo);
-                server.registerAccount(regInfo, requestNumber);
-            } catch (IllegalArgumentException e) {
-                System.err.println("Error parsing registration message: " + e.getMessage());
+            String action = tokens[0].trim().toLowerCase();
+
+            if (action.equals("register")) {
+                // Increment request number for registration.
+                int requestNumber = requestCounter.getAndIncrement();
+                try {
+                    RegistrationInfo regInfo = server.parseRegistrationMessage(msg);
+                    System.out.println("Parsed Registration Information: " + regInfo);
+                    server.registerAccount(regInfo, requestNumber);
+                } catch (IllegalArgumentException e) {
+                    System.err.println("Error parsing registration message: " + e.getMessage());
+                }
+            } else if (action.equals("deregister")) {
+                // For deregistration, we expect format: "deregister,uniqueName"
+                String uniqueName = tokens[1].trim();
+                server.deregisterAccount(uniqueName);
+            } else {
+                System.err.println("Unknown action: " + action);
             }
 
             receive = new byte[65535];

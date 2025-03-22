@@ -1,0 +1,10 @@
+User1,bidder,RQ#1
+user2,buyer,RQ#2
+user3,buyer,RQ#1
+user4,buyer,RQ#3
+user40,buyer,RQ#4
+user41,buyer,RQ#5
+user42,buyer,RQ#6
+user43,buyer,RQ#7
+user44,buyer,RQ#8
+user45,buyer,RQ#9

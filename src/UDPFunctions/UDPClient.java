@@ -13,11 +13,13 @@ public class UDPClient {
         // Create DatagramSocket object
         DatagramSocket ds = new DatagramSocket();
         InetAddress ip = InetAddress.getLocalHost(); // Get server IP
+        int serverPort = 420;
 
         byte[] buf = null;
 
         while (true) {
             // Take input from user
+            System.out.println("Please enter Registration Details: ");
             String inp = sc.nextLine();
             buf = inp.getBytes(); // Encode to Bytes
 

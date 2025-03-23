@@ -1,16 +1,21 @@
 package UDPFunctions;
 
 import Utils.RegistrationInfo;
+import Utils.ItemRegistry;
 
 import java.io.*;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.net.InetAddress;
+import java.util.List;
+import java.util.ArrayList;
 
 public class UDPServer {
 
     private static final int MAX_USERS = 10;
     private static final String FILE_PATH = "src/resources/accounts.txt";
+    private static final String ITEM_FILE = "src/resources/items.txt";
 
     // Thread-safe counter for request numbers.
     private static AtomicInteger requestCounter = new AtomicInteger(1);
@@ -76,36 +81,57 @@ public class UDPServer {
         return false;
     }
 
-    public void registerAccount(RegistrationInfo regInfo, int requestNumber) {
+    public void registerAccount(RegistrationInfo regInfo, int requestNumber, DatagramSocket ds) {
+        String confirmationMessage;
+        boolean success = true;
+
         if (isCapacityReached()) {
-            System.err.println("Registration denied: maximum user capacity reached.");
-            return;
+            confirmationMessage = "Register-denied RQ#" + requestNumber + " Reason: Capacity reached";
+            success = false;
+        } else if (isDuplicateName(regInfo.getUniqueName())) {
+            confirmationMessage = "Register-denied RQ#" + requestNumber + " Reason: Duplicate name";
+            success = false;
+        } else {
+            String entry = regInfo.getUniqueName() + "," + regInfo.getRole() + ",RQ#" + requestNumber;
+            try (FileWriter fw = new FileWriter(FILE_PATH, true);
+                 BufferedWriter bw = new BufferedWriter(fw);
+                 PrintWriter out = new PrintWriter(bw)) {
+
+                out.println(entry);
+                System.out.println("Account registered: " + entry);
+                confirmationMessage = "Registered,RQ#" + requestNumber;
+            } catch (IOException e) {
+                confirmationMessage = "Register-denied RQ#" + requestNumber + " Reason: Internal server error";
+                success = false;
+                System.err.println("Error writing to accounts file: " + e.getMessage());
+            }
         }
-        if (isDuplicateName(regInfo.getUniqueName())) {
-            System.err.println("Registration denied: unique name '" + regInfo.getUniqueName() + "' is already registered.");
-            return;
-        }
 
-        String filePath = "src/resources/accounts.txt";
+        // Send confirmation or denial message to client
+        try {
+            InetAddress clientIP = InetAddress.getByName(regInfo.getIpAddress());
+            int clientPort = regInfo.getUdpPort();
 
-        String entry = regInfo.getUniqueName() + "," + regInfo.getRole() + ",RQ#" + requestNumber;
+            byte[] buf = confirmationMessage.getBytes();
+            DatagramPacket dpSend = new DatagramPacket(buf, buf.length, clientIP, clientPort);
+            System.out.println("Sending message to client: " + confirmationMessage);
+            ds.send(dpSend);
 
-        try (FileWriter fw = new FileWriter(filePath, true);
-             BufferedWriter bw = new BufferedWriter(fw);
-             PrintWriter out = new PrintWriter(bw)) {
-
-            out.println(entry);
-            System.out.println("Account registered: " + entry);
         } catch (IOException e) {
-            System.err.println("Error writing to accounts file: " + e.getMessage());
+            System.err.println("Error sending response to client: " + e.getMessage());
+        }
+
+        if (!success) {
+            System.err.println("Registration failed for user: " + regInfo.getUniqueName());
         }
     }
 
-    public void deregisterAccount(String uniqueName) {
+    public void deregisterAccount(String uniqueName, DatagramSocket ds, InetAddress clientIP, int clientPort, int requestNumber) {
         File inputFile = new File(FILE_PATH);
         File tempFile = new File("src/resources/temp_accounts.txt");
 
         boolean found = false;
+        String confirmationMessage;
 
         try (BufferedReader reader = new BufferedReader(new FileReader(inputFile));
              PrintWriter writer = new PrintWriter(new FileWriter(tempFile))) {
@@ -123,25 +149,144 @@ public class UDPServer {
             }
         } catch (IOException e) {
             System.err.println("Error processing accounts file: " + e.getMessage());
+            confirmationMessage = "Deregister-denied RQ#" + requestNumber + " Reason: Internal server error";
+            sendMessageToClient(ds, clientIP, clientPort, confirmationMessage);
             return;
         }
 
         // Replace the original file with the temp file.
-        if (!inputFile.delete()) {
-            System.err.println("Could not delete original accounts file.");
-            return;
-        }
-        if (!tempFile.renameTo(inputFile)) {
-            System.err.println("Could not rename temporary file.");
+        if (!inputFile.delete() || !tempFile.renameTo(inputFile)) {
+            confirmationMessage = "Deregister-denied RQ#" + requestNumber + " Reason: File processing error";
+            sendMessageToClient(ds, clientIP, clientPort, confirmationMessage);
             return;
         }
 
         if (found) {
+            confirmationMessage = "Deregistered RQ#" + requestNumber;
             System.out.println("Account deregistered: " + uniqueName);
         } else {
+            confirmationMessage = "Deregister-denied RQ#" + requestNumber + " Reason: Account not found";
             System.err.println("Account not found: " + uniqueName);
         }
+
+        // Send response to client
+        sendMessageToClient(ds, clientIP, clientPort, confirmationMessage);
     }
+
+    private void sendMessageToClient(DatagramSocket ds, InetAddress clientIP, int clientPort, String message) {
+        try {
+            byte[] buf = message.getBytes();
+            DatagramPacket dpSend = new DatagramPacket(buf, buf.length, clientIP, clientPort);
+            System.out.println("Sending message to client: " + message);
+            ds.send(dpSend);
+        } catch (IOException e) {
+            System.err.println("Error sending response to client: " + e.getMessage());
+        }
+    }
+
+    private boolean isDuplicateItem(String itemName) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(ITEM_FILE))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] tokens = line.split(",");
+                if (tokens[0].trim().equalsIgnoreCase(itemName)) {
+                    return true;
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error reading items file: " + e.getMessage());
+        }
+        return false;
+    }
+
+    private boolean writeItemToFile(ItemRegistry item) {
+        try (FileWriter fw = new FileWriter(ITEM_FILE, true);
+             BufferedWriter bw = new BufferedWriter(fw);
+             PrintWriter out = new PrintWriter(bw)) {
+
+            out.println(item.toString());
+            return true;
+        } catch (IOException e) {
+            System.err.println("Error writing to items file: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public void listItem(String message, int requestNumber, DatagramSocket ds, InetAddress clientIP, int clientPort) {
+        String[] tokens = message.split(",");
+        if (tokens.length != 5) {
+            sendMessageToClient(ds, clientIP, clientPort, "LIST-DENIED RQ#" + requestNumber + " Reason: Invalid format");
+            return;
+        }
+
+        String itemName = tokens[1].trim();
+        String description = tokens[2].trim();
+        double startingPrice;
+        long duration;
+
+        try {
+            startingPrice = Double.parseDouble(tokens[3].trim());
+            duration = Long.parseLong(tokens[4].trim());
+        } catch (NumberFormatException e) {
+            sendMessageToClient(ds, clientIP, clientPort, "LIST-DENIED RQ#" + requestNumber + " Reason: Invalid price or duration");
+            return;
+        }
+
+        if (isDuplicateItem(itemName)) {
+            sendMessageToClient(ds, clientIP, clientPort, "LIST-DENIED RQ#" + requestNumber + " Reason: Item already listed");
+            return;
+        }
+
+        ItemRegistry newItem = new ItemRegistry(itemName, description, startingPrice, duration);
+        if (writeItemToFile(newItem)) {
+            sendMessageToClient(ds, clientIP, clientPort, "ITEM_LISTED RQ#" + requestNumber);
+            broadcastToBuyers("NEW_ITEM RQ#" + requestNumber + " " + itemName + " " + startingPrice, ds);
+        } else {
+            sendMessageToClient(ds, clientIP, clientPort, "LIST-DENIED RQ#" + requestNumber + " Reason: Internal server error");
+        }
+    }
+
+    private void broadcastToBuyers(String message, DatagramSocket ds) {
+        List<RegistrationInfo> buyers = getAllRegisteredBuyers(); // Read from file
+        for (RegistrationInfo buyer : buyers) {
+            if (buyer.getRole().equalsIgnoreCase("buyer")) {
+                try {
+                    byte[] buf = message.getBytes();
+                    DatagramPacket packet = new DatagramPacket(buf, buf.length,
+                            InetAddress.getByName(buyer.getIpAddress()), buyer.getUdpPort());
+                    ds.send(packet);
+                } catch (IOException e) {
+                    System.err.println("Failed to send update to buyer: " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    private List<RegistrationInfo> getAllRegisteredBuyers() {
+        List<RegistrationInfo> buyers = new ArrayList<>();
+        File file = new File("src/resources/accounts.txt");
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] tokens = line.split(",");
+                if (tokens.length >= 3) {
+                    String uniqueName = tokens[0].trim();
+                    String role = tokens[1].trim();
+                    int udpPort = Integer.parseInt(tokens[2].split("#")[1].trim());
+
+                    if (role.equalsIgnoreCase("buyer")) {
+                        buyers.add(new RegistrationInfo(uniqueName, role, "127.0.0.1", udpPort, 0)); // IP and TCP port are placeholders
+                    }
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error reading accounts file: " + e.getMessage());
+        }
+
+        return buyers;
+    }
+
 
     public static void main(String[] args) throws IOException {
         DatagramSocket ds = new DatagramSocket(420);
@@ -174,21 +319,27 @@ public class UDPServer {
             String action = tokens[0].trim().toLowerCase();
 
             if (action.equals("register")) {
-                // Increment request number for registration.
                 int requestNumber = requestCounter.getAndIncrement();
                 try {
                     RegistrationInfo regInfo = server.parseRegistrationMessage(msg);
                     System.out.println("Parsed Registration Information: " + regInfo);
-                    server.registerAccount(regInfo, requestNumber);
+                    server.registerAccount(regInfo, requestNumber, ds);
                 } catch (IllegalArgumentException e) {
                     System.err.println("Error parsing registration message: " + e.getMessage());
                 }
             } else if (action.equals("deregister")) {
-                // For deregistration, we expect format: "deregister,uniqueName"
+                int requestNumber = requestCounter.getAndIncrement();
+                InetAddress clientIP = dpReceive.getAddress();
+                int clientPort = dpReceive.getPort();
                 String uniqueName = tokens[1].trim();
-                server.deregisterAccount(uniqueName);
+                server.deregisterAccount(uniqueName, ds, clientIP, clientPort, requestNumber);
             } else {
                 System.err.println("Unknown action: " + action);
+            }
+
+            if (action.equals("list_item")) {
+                int requestNumber = requestCounter.getAndIncrement();
+                server.listItem(msg, requestNumber, ds, dpReceive.getAddress(), dpReceive.getPort());
             }
 
             receive = new byte[65535];

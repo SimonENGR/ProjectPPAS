@@ -25,9 +25,9 @@ public class RegistrationInfo {
     @Override
     public String toString() {
         return "RegistrationInfo{" +
-                "uniqueName='" + uniqueName + '\'' +
-                ", role='" + role + '\'' +
-                ", ipAddress='" + ipAddress + '\'' +
+                "uniqueName=" + uniqueName + '\'' +
+                ", role=" + role + '\'' +
+                ", ipAddress=" + ipAddress + '\'' +
                 ", udpPort=" + udpPort +
                 ", tcpPort=" + tcpPort +
                 '}';

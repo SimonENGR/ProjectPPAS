@@ -12,23 +12,43 @@ public class UDPClient {
 
         // Create DatagramSocket object
         DatagramSocket ds = new DatagramSocket();
+
         InetAddress ip = InetAddress.getLocalHost(); // Get server IP
         int serverPort = 420;
 
-        byte[] buf = null;
+        System.out.println("Enter registration details:");
+
+        System.out.print("Unique Name: ");
+        String uniqueName = sc.nextLine();
+
+        System.out.print("Role (buyer/seller): ");
+        String role = sc.nextLine().toLowerCase();
+
+        System.out.print("IP Address: ");
+        String clientIp = sc.nextLine();
+
+        System.out.print("UDP Port: ");
+        String udpPort = sc.nextLine();
+
+        System.out.print("TCP Port: ");
+        String tcpPort = sc.nextLine();
+
+        // Build registration message in the format:
+        // register,uniqueName,role,ipAddress,udpPort,tcpPort
+        String registrationMsg = String.format("register,%s,%s,%s,%s,%s",
+                uniqueName, role, clientIp, udpPort, tcpPort);
+        byte[] regBuf = registrationMsg.getBytes();
+
+        DatagramPacket dpReg = new DatagramPacket(regBuf, regBuf.length, ip, serverPort);
+        ds.send(dpReg);
+        System.out.println("Registration message sent: " + registrationMsg);
 
         while (true) {
-            // Take input from user
-            System.out.println("Please enter Registration Details: ");
             String inp = sc.nextLine();
-            buf = inp.getBytes(); // Encode to Bytes
-
-            // Create a DatagramPacket and send data
-            DatagramPacket dpSend = new DatagramPacket(buf, buf.length, ip, 420);
+            byte[] buf = inp.getBytes();
+            DatagramPacket dpSend = new DatagramPacket(buf, buf.length, ip, serverPort);
             ds.send(dpSend);
-
-            // Exit loop if user inputs "bye"
-            if (inp.equals("bye")) {
+            if (inp.equalsIgnoreCase("bye")) {
                 System.out.println("Client sent bye...EXITING");
                 break;
             }

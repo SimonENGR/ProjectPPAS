@@ -2,6 +2,7 @@ package UDPFunctions;
 
 import Utils.RegistrationInfo;
 import Utils.ItemRegistry;
+import java.io.IOException;
 
 import java.io.*;
 import java.net.DatagramPacket;
@@ -40,7 +41,6 @@ public class UDPServer {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("UDP and TCP ports must be integers", e);
         }
-
         return new RegistrationInfo(uniqueName, role, ipAddress, udpPort, tcpPort);
     }
 
@@ -81,7 +81,7 @@ public class UDPServer {
         return false;
     }
 
-    public void registerAccount(RegistrationInfo regInfo, int requestNumber, DatagramSocket ds) {
+    public void registerAccount(RegistrationInfo regInfo, int requestNumber, DatagramSocket ds, DatagramPacket dpReceive) {
         String confirmationMessage;
         boolean success = true;
 
@@ -109,18 +109,24 @@ public class UDPServer {
 
         // Send confirmation or denial message to client
         try {
-            InetAddress clientIP = InetAddress.getByName(regInfo.getIpAddress());
-            int clientPort = regInfo.getUdpPort();
+            InetAddress clientIP = dpReceive.getAddress();
+            int clientPort = dpReceive.getPort();
 
             byte[] buf = confirmationMessage.getBytes();
             DatagramPacket dpSend = new DatagramPacket(buf, buf.length, clientIP, clientPort);
-            System.out.println("Sending message to client: " + confirmationMessage);
-            ds.send(dpSend);
 
+            try {
+                Thread.sleep(200);  // 200ms delay (adjust if needed)
+            } catch (InterruptedException e) {
+                System.err.println("Sleep interrupted: " + e.getMessage());
+            }
+
+            System.out.println("Sending registration message to client: " + confirmationMessage);
+            ds.send(dpSend);
+            System.out.println("Sending response to " + clientIP + ":" + clientPort);
         } catch (IOException e) {
             System.err.println("Error sending response to client: " + e.getMessage());
         }
-
         if (!success) {
             System.err.println("Registration failed for user: " + regInfo.getUniqueName());
         }
@@ -323,9 +329,19 @@ public class UDPServer {
                 try {
                     RegistrationInfo regInfo = server.parseRegistrationMessage(msg);
                     System.out.println("Parsed Registration Information: " + regInfo);
-                    server.registerAccount(regInfo, requestNumber, ds);
+                    server.registerAccount(regInfo, requestNumber, ds,dpReceive);
                 } catch (IllegalArgumentException e) {
                     System.err.println("Error parsing registration message: " + e.getMessage());
+                    String errorMessage = "Register-denied RQ#" + requestNumber + " Reason: " + e.getMessage();
+                    // Get client's IP and port from the received packet.
+                    InetAddress clientIP = dpReceive.getAddress();
+                    int clientPort = dpReceive.getPort();
+                    try {
+                        DatagramPacket dpSend = new DatagramPacket(errorMessage.getBytes(), errorMessage.getBytes().length, clientIP, clientPort);
+                        ds.send(dpSend);
+                    } catch (IOException ex) {
+                        System.err.println("Error sending error message: " + ex.getMessage());
+                    }
                 }
             } else if (action.equals("deregister")) {
                 int requestNumber = requestCounter.getAndIncrement();

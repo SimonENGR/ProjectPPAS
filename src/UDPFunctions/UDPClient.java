@@ -81,7 +81,7 @@ public class UDPClient {
             System.out.print("Enter starting price: ");
             String startingPrice = sc.nextLine().trim();
 
-            System.out.print("Enter duration (in milliseconds): ");
+            System.out.print("Enter duration (in minutes): ");
             String duration = sc.nextLine().trim();
 
             // Build list item message in the format:
@@ -106,23 +106,57 @@ public class UDPClient {
             String showListings = sc.nextLine().trim().toLowerCase();
 
             if (showListings.equals("yes")) {
-                System.out.println("Waiting for item listings (broadcast messages) from the server. Type 'bye' to exit.");
+                // Step 1: Request current items
+                String getAllItems = "get_all_items";
+                byte[] requestBuf = getAllItems.getBytes();
+                DatagramPacket requestPacket = new DatagramPacket(requestBuf, requestBuf.length, serverIP, 420);
+                ds.send(requestPacket);
 
-                // Loop to continuously receive broadcast messages.
+                // Step 2: Receive item list from server
+                byte[] responseBuf = new byte[65535];
+                DatagramPacket responsePacket = new DatagramPacket(responseBuf, responseBuf.length);
+                ds.receive(responsePacket);
+                String itemList = new String(responsePacket.getData(), 0, responsePacket.getLength());
+
+                System.out.println("\n=== Current Items Listed ===");
+                System.out.println(itemList);
+
+                System.out.println("Listening for item broadcasts. Type 'exit' to stop.\n");
+
+                Thread listenerThread = new Thread(() -> {
+                    while (true) {
+                        try {
+                            byte[] buffer = new byte[65535];
+                            DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+                            ds.receive(packet);
+                            String broadcastMsg = new String(packet.getData(), 0, packet.getLength());
+
+                            if (broadcastMsg.equalsIgnoreCase("bye")) {
+                                System.out.println("Server ended broadcast.");
+                                break;
+                            }
+
+                            System.out.println("Broadcast: " + broadcastMsg);
+                        } catch (IOException e) {
+                            System.err.println("Listener stopped: " + e.getMessage());
+                            break;
+                        }
+                    }
+                });
+
+                listenerThread.setDaemon(true);
+                listenerThread.start();
+
+                // Keep buyer client interactive
                 while (true) {
-                    byte[] responseBuffer = new byte[65535];
-                    DatagramPacket dpReceive = new DatagramPacket(responseBuffer, responseBuffer.length);
-                    ds.receive(dpReceive);
-                    String response = new String(dpReceive.getData(), 0, dpReceive.getLength());
-
-                    if (response.equalsIgnoreCase("bye")) {
-                        System.out.println("Exiting broadcast listener.");
+                    System.out.print("Type 'exit' to quit viewer or press Enter to continue waiting: ");
+                    String input = sc.nextLine().trim().toLowerCase();
+                    if (input.equals("exit")) {
                         break;
                     }
-
-                    System.out.println("Broadcast message: " + response);
                 }
             }
+
         }
 
         System.out.println("Client exiting...");

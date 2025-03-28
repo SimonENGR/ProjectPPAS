@@ -6,6 +6,28 @@ import java.util.List;
 
 public class FileUtils {
 
+    public static int readLastRequestNumber(String filePath) {
+        File file = new File(filePath);
+        if (!file.exists()) return 0;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String line = reader.readLine();
+            return line != null ? Integer.parseInt(line.trim()) : 0;
+        } catch (IOException | NumberFormatException e) {
+            System.err.println("Error reading last RQ#: " + e.getMessage());
+            return 0;
+        }
+    }
+
+    public static void writeLastRequestNumber(String filePath, int lastRQ) {
+        try (PrintWriter writer = new PrintWriter(new FileWriter(filePath))) {
+            writer.println(lastRQ);
+        } catch (IOException e) {
+            System.err.println("Error writing last RQ#: " + e.getMessage());
+        }
+    }
+
+
     public static boolean isCapacityReached(String filePath, int maxUsers) {
         File file = new File(filePath);
         if (!file.exists()) return false;
@@ -90,6 +112,69 @@ public class FileUtils {
         return false;
     }
 
+    public static boolean isAlreadySubscribed(String filePath, String itemName, RegistrationInfo buyer) {
+        File file = new File(filePath);
+        if (!file.exists()) return false;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] tokens = line.split(",");
+                if (tokens.length >= 4 &&
+                        tokens[0].trim().equalsIgnoreCase(itemName) &&
+                        tokens[2].trim().equals(buyer.getIpAddress()) &&
+                        tokens[3].trim().equals(String.valueOf(buyer.getUdpPort()))) {
+                    return true;
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error checking subscription: " + e.getMessage());
+        }
+
+        return false;
+    }
+
+    public static boolean addSubscription(String filePath, String itemName, RegistrationInfo buyer) {
+        String line = itemName + "," + buyer.getUniqueName() + "," + buyer.getIpAddress() + "," + buyer.getUdpPort();
+        return appendLineToFile(filePath, line);
+    }
+
+    public static boolean removeSubscription(String filePath, String itemName, RegistrationInfo buyer) {
+        File inputFile = new File(filePath);
+        File tempFile = new File(filePath + ".tmp");
+        boolean found = false;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(inputFile));
+             PrintWriter writer = new PrintWriter(new FileWriter(tempFile))) {
+
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] tokens = line.split(",");
+                if (tokens.length >= 4 &&
+                        tokens[0].trim().equalsIgnoreCase(itemName) &&
+                        tokens[2].trim().equals(buyer.getIpAddress()) &&
+                        tokens[3].trim().equals(String.valueOf(buyer.getUdpPort()))) {
+                    found = true; // Skip this line (remove it)
+                    continue;
+                }
+                writer.println(line); // Keep this line
+            }
+
+        } catch (IOException e) {
+            System.err.println("Error processing subscriptions file: " + e.getMessage());
+            return false;
+        }
+
+        // Replace original file with updated temp file
+        if (!inputFile.delete() || !tempFile.renameTo(inputFile)) {
+            System.err.println("Failed to replace subscriptions file.");
+            return false;
+        }
+
+        return found;
+    }
+
+
     public static String removeAccountByName(String filePath, String uniqueName, int requestNumber) {
         File inputFile = new File(filePath);
         File tempFile = new File(filePath + ".tmp");
@@ -117,6 +202,28 @@ public class FileUtils {
 
         return found ? "Deregistered RQ#" + requestNumber : "Deregister-denied RQ#" + requestNumber + " Reason: Account not found";
     }
+
+    public static List<RegistrationInfo> getSubscribersForItem(String filePath, String itemName) {
+        List<RegistrationInfo> subscribers = new ArrayList<>();
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] tokens = line.split(",");
+                if (tokens.length >= 4 && tokens[0].trim().equalsIgnoreCase(itemName)) {
+                    String buyerName = tokens[1].trim();
+                    String ip = tokens[2].trim();
+                    int udpPort = Integer.parseInt(tokens[3].trim());
+                    subscribers.add(new RegistrationInfo(buyerName, "buyer", ip, udpPort, 0));
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error reading subscriptions file: " + e.getMessage());
+        }
+
+        return subscribers;
+    }
+
 
     public static List<RegistrationInfo> getAllRegisteredBuyers(String filePath) {
         List<RegistrationInfo> buyers = new ArrayList<>();

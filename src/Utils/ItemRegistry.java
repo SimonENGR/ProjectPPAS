@@ -19,6 +19,7 @@ public class ItemRegistry {
     public String getDescription() { return description; }
     public double getStartingPrice() { return startingPrice; }
     public long getDuration() { return duration; }
+    public int getRequestNumber() { return requestNumber; }
 
     @Override
     public String toString() {

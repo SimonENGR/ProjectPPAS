@@ -27,21 +27,4 @@ public class NetworkUtils {
             System.err.println("Error sending message: " + e.getMessage());
         }
     }
-
-    public static void broadcastToBuyers(String message, DatagramSocket ds, String accountFilePath) {
-        List<RegistrationInfo> buyers = FileUtils.getAllRegisteredBuyers(accountFilePath);
-
-        for (RegistrationInfo buyer : buyers) {
-            if (buyer.getRole().equalsIgnoreCase("buyer")) {
-                try {
-                    byte[] buf = message.getBytes();
-                    DatagramPacket packet = new DatagramPacket(buf, buf.length,
-                            InetAddress.getByName(buyer.getIpAddress()), buyer.getUdpPort());
-                    ds.send(packet);
-                } catch (IOException e) {
-                    System.err.println("Failed to send update to buyer: " + e.getMessage());
-                }
-            }
-        }
-    }
 }

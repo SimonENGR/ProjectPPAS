@@ -11,14 +11,17 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.List;
 
 public class UDPServer {
 
     private static final int MAX_USERS = 10;
     private static final String FILE_PATH = "src/resources/accounts.txt";
     private static final String ITEM_FILE = "src/resources/items.txt";
+    private static final String SUBSCRIPTION_FILE = "src/resources/subscriptions.txt";
 
-    private static AtomicInteger requestCounter = new AtomicInteger(1);
+
+    private static AtomicInteger requestCounter = new AtomicInteger(FileUtils.readLastRequestNumber("src/resources/last_rq.txt") + 1);
 
     public void registerAccount(RegistrationInfo regInfo, int requestNumber, DatagramSocket ds, DatagramPacket dpReceive) {
         String confirmationMessage;
@@ -91,11 +94,80 @@ public class UDPServer {
         ItemRegistry newItem = new ItemRegistry(itemName, description, startingPrice, duration, requestNumber);
         if (FileUtils.appendLineToFile(ITEM_FILE, newItem.toString())) {
             NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "ITEM_LISTED RQ#" + requestNumber);
-            NetworkUtils.broadcastToBuyers("NEW_ITEM RQ#" + requestNumber + " " + itemName + " " + startingPrice, ds, FILE_PATH);
+            broadcastAuctionAnnouncement(newItem, ds);
         } else {
             NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "LIST-DENIED RQ#" + requestNumber + " Reason: Internal server error");
         }
     }
+
+    public void handleSubscribe(String message, int requestNumber, DatagramSocket ds, InetAddress clientIP, int clientPort) {
+        String[] tokens = message.split(",", 4);
+        if (tokens.length != 4) {
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "SUBSCRIPTION-DENIED RQ#" + requestNumber + " Reason: Invalid format");
+            return;
+        }
+
+        String rqNum = tokens[1].trim();
+        String itemName = tokens[2].trim();
+        String buyerName = tokens[3].trim();
+
+        RegistrationInfo buyer = new RegistrationInfo(buyerName, "buyer", clientIP.getHostAddress(), clientPort, 0);
+
+        if (FileUtils.isAlreadySubscribed(SUBSCRIPTION_FILE, itemName, buyer)) {
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "SUBSCRIPTION-DENIED " + rqNum + " Reason: Already subscribed");
+            return;
+        }
+
+        boolean written = FileUtils.addSubscription(SUBSCRIPTION_FILE, itemName, buyer);
+        if (written) {
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "SUBSCRIBED " + rqNum);
+        } else {
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "SUBSCRIPTION-DENIED " + rqNum + " Reason: Internal server error");
+        }
+    }
+
+    public void handleDeSubscribe(String message, int requestNumber, DatagramSocket ds, InetAddress clientIP, int clientPort) {
+        String[] tokens = message.split(",", 4);
+        if (tokens.length != 4) {
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "UNSUBSCRIBE-DENIED RQ#" + requestNumber + " Reason: Invalid format");
+            return;
+        }
+
+        String rqNum = tokens[1].trim();
+        String itemName = tokens[2].trim();
+        String buyerName = tokens[3].trim();
+        RegistrationInfo buyer = new RegistrationInfo(buyerName, "buyer", clientIP.getHostAddress(), clientPort, 0);
+
+        boolean removed = FileUtils.removeSubscription("src/resources/subscriptions.txt", itemName, buyer);
+
+        if (removed) {
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "UNSUBSCRIBED " + rqNum);
+        } else {
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "UNSUBSCRIBE-DENIED " + rqNum + " Reason: Subscription not found");
+        }
+    }
+
+    public void broadcastAuctionAnnouncement(ItemRegistry item, DatagramSocket ds) {
+        List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem("src/resources/subscriptions.txt", item.getItemName());
+
+        String message = String.format("AUCTION_ANNOUNCE %s %s %s %.2f %d",
+                item.getRequestNumber(),                   // RQ#
+                item.getItemName(),
+                item.getDescription(),
+                item.getStartingPrice(),
+                item.getDuration() / 60000                 // Time left in minutes
+        );
+
+        for (RegistrationInfo buyer : subscribedBuyers) {
+            try {
+                InetAddress address = InetAddress.getByName(buyer.getIpAddress());
+                NetworkUtils.sendMessageToClient(ds, address, buyer.getUdpPort(), message);
+            } catch (IOException e) {
+                System.err.println("Error broadcasting to " + buyer.getIpAddress() + ": " + e.getMessage());
+            }
+        }
+    }
+
 
     public static void main(String[] args) throws IOException {
         DatagramSocket ds = new DatagramSocket(420);
@@ -136,6 +208,7 @@ public class UDPServer {
 
             if (action.equals("register")) {
                 int requestNumber = requestCounter.getAndIncrement();
+                FileUtils.writeLastRequestNumber("src/resources/last_rq.txt", requestNumber);
                 try {
                     RegistrationInfo regInfo = MessageParser.parseRegistrationMessage(msg);
                     System.out.println("Parsed Registration Information: " + regInfo);
@@ -147,13 +220,22 @@ public class UDPServer {
                 }
             } else if (action.equals("deregister")) {
                 int requestNumber = requestCounter.getAndIncrement();
+                FileUtils.writeLastRequestNumber("src/resources/last_rq.txt", requestNumber);
                 String uniqueName = tokens[1].trim();
                 server.deregisterAccount(uniqueName, ds, dpReceive.getAddress(), dpReceive.getPort(), requestNumber);
             } else if (action.equals("list_item")) {
                 int requestNumber = requestCounter.getAndIncrement();
+                FileUtils.writeLastRequestNumber("src/resources/last_rq.txt", requestNumber);
                 server.listItem(msg, requestNumber, ds, dpReceive.getAddress(), dpReceive.getPort());
-            }
-            else {
+            } else if (action.equals("subscribe")) {
+                int requestNumber = requestCounter.getAndIncrement();
+                FileUtils.writeLastRequestNumber("src/resources/last_rq.txt", requestNumber);
+                server.handleSubscribe(msg, requestNumber, ds, dpReceive.getAddress(), dpReceive.getPort());
+            } else if (action.equals("de-subscribe")) {
+                int requestNumber = requestCounter.getAndIncrement();
+                FileUtils.writeLastRequestNumber("src/resources/last_rq.txt", requestNumber);
+                server.handleDeSubscribe(msg, requestNumber, ds, dpReceive.getAddress(), dpReceive.getPort());
+            } else {
                 System.err.println("Unknown action: " + action);
             }
 

@@ -86,11 +86,9 @@ public class UDPClient {
             while (true) {
                 System.out.print("Enter item name (or type 'exit' to stop listing items): ");
                 String itemName = sc.nextLine().trim();
-
                 if (itemName.equalsIgnoreCase("exit")) {
                     break;
                 }
-
             System.out.print("Enter item description: ");
             String description = sc.nextLine().trim();
 
@@ -111,7 +109,6 @@ public class UDPClient {
             ds.receive(dpReceive);
             String response = new String(dpReceive.getData(), 0, dpReceive.getLength());
             System.out.println("Server response: " + response);
-
         }
 
 
@@ -138,7 +135,8 @@ public class UDPClient {
                 System.out.println("1. Subscribe to item");
                 System.out.println("2. Unsubscribe from item");
                 System.out.println("3. Listen for auction announcements");
-                System.out.println("4. Exit");
+                System.out.println("4. Place a bid");
+                System.out.println("5. Exit");
                 System.out.print("Select option: ");
                 String action = sc.nextLine().trim();
 
@@ -189,7 +187,24 @@ public class UDPClient {
                     listener.start();
                     sc.nextLine(); // Wait for Enter
 
-                } else if (action.equals("4")) {
+                }
+                else if (action.equals("4")) {  // New branch for placing a bid
+                    System.out.print("Enter the item name to bid on: ");
+                    String itemName = sc.nextLine().trim();
+                    System.out.print("Enter your bid amount: ");
+                    String bidAmount = sc.nextLine().trim();
+                    // The bid message includes the item name, buyer's unique name, and the bid amount.
+                    String bidMessage = "bid," + itemName + "," + uniqueName + "," + bidAmount;
+                    ds.send(new DatagramPacket(bidMessage.getBytes(), bidMessage.length(), serverIP, 420));
+
+                    byte[] buf = new byte[65535];
+                    DatagramPacket responsePacket = new DatagramPacket(buf, buf.length);
+                    ds.receive(responsePacket);
+                    String response = new String(responsePacket.getData(), 0, responsePacket.getLength());
+                    System.out.println("Server: " + response);
+
+                }
+                else if (action.equals("5")) {
                     break;
                 } else {
                     System.out.println("Invalid option.");

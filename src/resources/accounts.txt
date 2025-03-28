@@ -5,3 +5,4 @@ ghoul,buyer,RQ#6
 david,buyer,RQ#10
 tory,seller,RQ#12
 sloppy,seller,RQ#14
+perla,seller,RQ#19

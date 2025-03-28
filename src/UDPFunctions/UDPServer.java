@@ -10,7 +10,10 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.List;
 
 public class UDPServer {
@@ -22,6 +25,110 @@ public class UDPServer {
 
 
     private static AtomicInteger requestCounter = new AtomicInteger(FileUtils.readLastRequestNumber("src/resources/last_rq.txt") + 1);
+    private static ConcurrentHashMap<String, ItemRegistry> activeAuctions = new ConcurrentHashMap<>();
+    private static ReentrantLock bidLock = new ReentrantLock();
+
+    public void placeBid(String message, int requestNumber, DatagramSocket ds, InetAddress clientIP, int clientPort) {
+        String[] tokens = message.split(",");
+        if (tokens.length != 4) {
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + requestNumber + " Reason: Invalid format");
+            return;
+        }
+        String itemName = tokens[1].trim();
+        String bidderName = tokens[2].trim();
+        double bidAmount;
+
+        try {
+            bidAmount = Double.parseDouble(tokens[3].trim());
+        } catch (NumberFormatException e) {
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + requestNumber + " Reason: Invalid bid amount");
+            return;
+        }
+
+        ItemRegistry item = activeAuctions.get(itemName);
+        if (item == null) {
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + requestNumber + " Reason: Item not found");
+            return;
+        }
+
+        bidLock.lock();
+        try {
+            if (item.getTimeRemaining() <= 0) {
+                NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + requestNumber + " Reason: Auction ended");
+                return;
+            }
+
+            if (item.placeBid(bidderName, bidAmount)) {
+                FileUtils.appendLineToFile(ITEM_FILE, item.toString());
+                NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-ACCEPTED RQ#" + requestNumber);
+                broadcastAuctionAnnouncement(item, ds);
+            } else {
+                NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + requestNumber + " Reason: Bid too low");
+            }
+        } finally {
+            bidLock.unlock();
+        }
+    }
+
+    public void startAuctionBroadcast(ItemRegistry item, DatagramSocket ds) {
+        long auctionEndTime = System.currentTimeMillis() + item.getDuration();
+
+        while (System.currentTimeMillis() < auctionEndTime) {
+            try {
+                Thread.sleep(30_000);  // Sleep for 30 seconds before sending another update
+
+                List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, item.getItemName());
+
+                String message = String.format("AUCTION_UPDATE %s %s %s %.2f %d",
+                        item.getRequestNumber(),                   // RQ#
+                        item.getItemName(),
+                        item.getDescription(),
+                        item.getStartingPrice(),                   // This should be updated with current highest bid
+                        (auctionEndTime - System.currentTimeMillis()) / 60000  // Time left in minutes
+                );
+
+                // Send updates to all subscribed buyers
+                for (RegistrationInfo buyer : subscribedBuyers) {
+                    try {
+                        InetAddress address = InetAddress.getByName(buyer.getIpAddress());
+                        NetworkUtils.sendMessageToClient(ds, address, buyer.getUdpPort(), message);
+                    } catch (UnknownHostException e) {
+                        System.err.println("Error: Unable to resolve IP address for buyer " + buyer.getUniqueName() + ": " + buyer.getIpAddress());
+                    }
+                }
+            } catch (InterruptedException e) {
+                System.err.println("Auction broadcast interrupted: " + e.getMessage());
+            }
+        }
+
+        // Once auction ends, notify buyers and remove item
+        endAuction(item, ds);
+    }
+
+    public void endAuction(ItemRegistry item, DatagramSocket ds) {
+        List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, item.getItemName());
+
+        String message = String.format("AUCTION_ENDED %s %s %s %.2f %d",
+                item.getRequestNumber(),                   // RQ#
+                item.getItemName(),
+                item.getDescription(),
+                item.getStartingPrice(),                   // Final price
+                0 // No time left as auction is over
+        );
+
+        // Notify all subscribed buyers that the auction is over
+        for (RegistrationInfo buyer : subscribedBuyers) {
+            try {
+            InetAddress address = InetAddress.getByName(buyer.getIpAddress());
+            NetworkUtils.sendMessageToClient(ds, address, buyer.getUdpPort(), message);
+            } catch (UnknownHostException e) {
+                System.err.println("Error: Unable to resolve IP address for buyer " + buyer.getUniqueName() + ": " + buyer.getIpAddress());
+            }
+        }
+
+        // Remove item from the active auction list
+        FileUtils.removeItemFromFile(ITEM_FILE, item.getItemName());
+    }
 
     public void registerAccount(RegistrationInfo regInfo, int requestNumber, DatagramSocket ds, DatagramPacket dpReceive) {
         String confirmationMessage;
@@ -93,6 +200,9 @@ public class UDPServer {
         if (FileUtils.appendLineToFile(ITEM_FILE, newItem.toString())) {
             NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "ITEM_LISTED RQ#" + requestNumber);
             broadcastAuctionAnnouncement(newItem, ds);
+
+            // Start the auction broadcast timer
+            startAuctionBroadcast(newItem, ds);
         } else {
             NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "LIST-DENIED RQ#" + requestNumber + " Reason: Internal server error");
         }
@@ -214,24 +324,34 @@ public class UDPServer {
                     String errorMessage = "Register-denied RQ#" + requestNumber + " Reason: " + e.getMessage();
                     NetworkUtils.sendMessageToClient(ds, dpReceive.getAddress(), dpReceive.getPort(), errorMessage);
                 }
-            } else if (action.equals("deregister")) {
+            }
+            else if (action.equals("deregister")) {
                 int requestNumber = requestCounter.getAndIncrement();
                 FileUtils.writeLastRequestNumber("src/resources/last_rq.txt", requestNumber);
                 String uniqueName = tokens[1].trim();
                 server.deregisterAccount(uniqueName, ds, dpReceive.getAddress(), dpReceive.getPort(), requestNumber);
-            } else if (action.equals("list_item")) {
+            }
+            else if (action.equals("list_item")) {
                 int requestNumber = requestCounter.getAndIncrement();
                 FileUtils.writeLastRequestNumber("src/resources/last_rq.txt", requestNumber);
                 server.listItem(msg, requestNumber, ds, dpReceive.getAddress(), dpReceive.getPort());
-            } else if (action.equals("subscribe")) {
+            }
+            else if (action.equals("subscribe")) {
                 int requestNumber = requestCounter.getAndIncrement();
                 FileUtils.writeLastRequestNumber("src/resources/last_rq.txt", requestNumber);
                 server.handleSubscribe(msg, requestNumber, ds, dpReceive.getAddress(), dpReceive.getPort());
-            } else if (action.equals("de-subscribe")) {
+            }
+            else if (action.equals("de-subscribe")) {
                 int requestNumber = requestCounter.getAndIncrement();
                 FileUtils.writeLastRequestNumber("src/resources/last_rq.txt", requestNumber);
                 server.handleDeSubscribe(msg, requestNumber, ds, dpReceive.getAddress(), dpReceive.getPort());
-            } else {
+            }
+            else if (action.equals("bid")) {
+                int requestNumber = requestCounter.getAndIncrement();
+                FileUtils.writeLastRequestNumber("src/resources/last_rq.txt", requestNumber);
+                server.placeBid(msg, requestNumber, ds, dpReceive.getAddress(), dpReceive.getPort());
+            }
+            else {
                 System.err.println("Unknown action: " + action);
             }
 

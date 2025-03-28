@@ -1,3 +1,7 @@
-
-seller1,seller,RQ#2
-buyer1,buyer,RQ#5
+Maxime,seller,RQ#2
+Peter,seller,RQ#1
+Bum,buyer,RQ#4
+ghoul,buyer,RQ#6
+david,buyer,RQ#10
+tory,seller,RQ#12
+sloppy,seller,RQ#14

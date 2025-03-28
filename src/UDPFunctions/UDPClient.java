@@ -83,8 +83,13 @@ public class UDPClient {
         // === POST-REGISTRATION LOGIC ===
         if (role.equals("seller")) {
             System.out.println("\n=== Item Listing (Seller) ===");
-            System.out.print("Enter item name: ");
-            String itemName = sc.nextLine().trim();
+            while (true) {
+                System.out.print("Enter item name (or type 'exit' to stop listing items): ");
+                String itemName = sc.nextLine().trim();
+
+                if (itemName.equalsIgnoreCase("exit")) {
+                    break;
+                }
 
             System.out.print("Enter item description: ");
             String description = sc.nextLine().trim();
@@ -106,6 +111,10 @@ public class UDPClient {
             ds.receive(dpReceive);
             String response = new String(dpReceive.getData(), 0, dpReceive.getLength());
             System.out.println("Server response: " + response);
+
+        }
+
+
         } else if (role.equals("buyer")) {
             System.out.println("\n=== Buyer Options ===");
             System.out.print("Do you want to see the item listings? (yes/no): ");
@@ -187,6 +196,8 @@ public class UDPClient {
                 }
             }
         }
+
+
 
         System.out.println("Client exiting...");
         ds.close();

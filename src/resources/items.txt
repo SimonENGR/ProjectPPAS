@@ -1,1 +1,2 @@
-itemName = comic, description: hentai manga, startingPrice = 50.0, duration = 3600000, requestNumber = RQ#3
+itemName = Pen, description: pen that writes, startingPrice = 10.0, duration = 1800000, requestNumber = RQ#3
+itemName = paper towel, description: paper towel that does paper towel stuff, startingPrice = 10.0, duration = 18000000, requestNumber = RQ#13

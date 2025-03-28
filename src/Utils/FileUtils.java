@@ -220,11 +220,8 @@ public class FileUtils {
         } catch (IOException e) {
             System.err.println("Error reading subscriptions file: " + e.getMessage());
         }
-
         return subscribers;
     }
-
-
     public static List<RegistrationInfo> getAllRegisteredBuyers(String filePath) {
         List<RegistrationInfo> buyers = new ArrayList<>();
 

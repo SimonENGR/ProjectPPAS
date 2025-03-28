@@ -85,12 +85,10 @@ public class UDPServer {
                     "LIST-DENIED RQ#" + requestNumber + " Reason: Item limit reached");
             return;
         }
-
         if (FileUtils.isDuplicateItem(ITEM_FILE, itemName)) {
             NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "LIST-DENIED RQ#" + requestNumber + " Reason: Item already listed");
             return;
         }
-
         ItemRegistry newItem = new ItemRegistry(itemName, description, startingPrice, duration, requestNumber);
         if (FileUtils.appendLineToFile(ITEM_FILE, newItem.toString())) {
             NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "ITEM_LISTED RQ#" + requestNumber);
@@ -157,7 +155,6 @@ public class UDPServer {
                 item.getStartingPrice(),
                 item.getDuration() / 60000                 // Time left in minutes
         );
-
         for (RegistrationInfo buyer : subscribedBuyers) {
             try {
                 InetAddress address = InetAddress.getByName(buyer.getIpAddress());
@@ -167,7 +164,6 @@ public class UDPServer {
             }
         }
     }
-
 
     public static void main(String[] args) throws IOException {
         DatagramSocket ds = new DatagramSocket(420);

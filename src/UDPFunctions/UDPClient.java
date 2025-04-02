@@ -197,12 +197,16 @@ public class UDPClient {
                         String bidAmount = sc.nextLine().trim();
 
                         String bidMessage = "bid," + itemName + "," + uniqueName + "," + bidAmount;
+                        //debugger
+                        System.out.println("Sending bid request: " + bidMessage);
+
                         ds.send(new DatagramPacket(bidMessage.getBytes(), bidMessage.length(), serverIP, 420));
 
                         byte[] bidBuf = new byte[65535];
                         DatagramPacket bidResponse = new DatagramPacket(bidBuf, bidBuf.length);
                         ds.receive(bidResponse);
-                        System.out.println("Server: " + new String(bidResponse.getData(), 0, bidResponse.getLength()));
+                        String response = new String(bidResponse.getData(), 0, bidResponse.getLength());
+                        System.out.println("Server Response: " + response);
                         break;
 
                     case "5": // Exit the loop

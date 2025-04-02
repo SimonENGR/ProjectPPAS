@@ -47,6 +47,8 @@ public class UDPServer {
 
         ItemRegistry item = activeAuctions.get(itemName);
         if (item == null) {
+            System.out.println("DEBUG: Received bid for item '" + itemName + "'");
+            System.out.println("DEBUG: Available auction items -> " + activeAuctions.keySet());
             NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + requestNumber + " Reason: Item not found");
             return;
         }
@@ -196,7 +198,11 @@ public class UDPServer {
             NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "LIST-DENIED RQ#" + requestNumber + " Reason: Item already listed");
             return;
         }
+
         ItemRegistry newItem = new ItemRegistry(itemName, description, startingPrice, duration, requestNumber);
+        // Add item to active auctions
+        activeAuctions.put(itemName, newItem);
+
         if (FileUtils.appendLineToFile(ITEM_FILE, newItem.toString())) {
             NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "ITEM_LISTED RQ#" + requestNumber);
             broadcastAuctionAnnouncement(newItem, ds);

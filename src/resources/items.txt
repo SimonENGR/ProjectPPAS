@@ -1,3 +1,1 @@
-itemName = Pen, description: pen that writes, startingPrice = 10.0, duration = 1800000, requestNumber = RQ#3
-itemName = paper towel, description: paper towel that does paper towel stuff, startingPrice = 10.0, duration = 18000000, requestNumber = RQ#13
-itemName = penjamin, description: dab pen, startingPrice = 6969.0, duration = 6000000, requestNumber = RQ#20
+itemName = Headphones, description: for music, startingPrice = 150.0, currentPrice = 150.0, highestBidder = None, duration = 3600000, timeRemaining = 60 minutes, requestNumber = RQ#25

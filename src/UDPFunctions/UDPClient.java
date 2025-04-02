@@ -138,76 +138,79 @@ public class UDPClient {
                 System.out.println("4. Place a bid");
                 System.out.println("5. Exit");
                 System.out.print("Select option: ");
+
                 String action = sc.nextLine().trim();
 
-                if (action.equals("1")) {
-                    System.out.print("Enter Item Name to subscribe to: ");
-                    String itemName = sc.nextLine().trim();
-                    int subRQ = (int) (Math.random() * 10000);
-                    String subscribeMsg = "subscribe," + subRQ + "," + itemName + "," + uniqueName;
-                    ds.send(new DatagramPacket(subscribeMsg.getBytes(), subscribeMsg.length(), serverIP, 420));
+                switch (action) {
+                    case "1": // Subscribe to an item
+                        System.out.print("Enter Item Name to subscribe to: ");
+                        String itemName = sc.nextLine().trim();
+                        int subRQ = (int) (Math.random() * 10000);
+                        String subscribeMsg = "subscribe," + subRQ + "," + itemName + "," + uniqueName;
+                        ds.send(new DatagramPacket(subscribeMsg.getBytes(), subscribeMsg.length(), serverIP, 420));
 
-                    byte[] buf = new byte[65535];
-                    DatagramPacket response = new DatagramPacket(buf, buf.length);
-                    ds.receive(response);
-                    String serverResponse = new String(response.getData(), 0, response.getLength());
-                    System.out.println("Server: " + serverResponse);
+                        byte[] subBuf = new byte[65535];
+                        DatagramPacket subResponse = new DatagramPacket(subBuf, subBuf.length);
+                        ds.receive(subResponse);
+                        System.out.println("Server: " + new String(subResponse.getData(), 0, subResponse.getLength()));
+                        break;
 
-                } else if (action.equals("2")) {
-                    System.out.print("Enter Item Name to unsubscribe from: ");
-                    String itemName = sc.nextLine().trim();
-                    int unsubRQ = (int) (Math.random() * 10000);
-                    String unsubMsg = "de-subscribe," + unsubRQ + "," + itemName + "," + uniqueName;
-                    ds.send(new DatagramPacket(unsubMsg.getBytes(), unsubMsg.length(), serverIP, 420));
+                    case "2": // Unsubscribe from an item
+                        System.out.print("Enter Item Name to unsubscribe from: ");
+                        itemName = sc.nextLine().trim();
+                        int unsubRQ = (int) (Math.random() * 10000);
+                        String unsubMsg = "de-subscribe," + unsubRQ + "," + itemName + "," + uniqueName;
+                        ds.send(new DatagramPacket(unsubMsg.getBytes(), unsubMsg.length(), serverIP, 420));
 
-                    byte[] buf = new byte[65535];
-                    DatagramPacket response = new DatagramPacket(buf, buf.length);
-                    ds.receive(response);
-                    String serverResponse = new String(response.getData(), 0, response.getLength());
-                    System.out.println("Server: " + serverResponse);
+                        byte[] unsubBuf = new byte[65535];
+                        DatagramPacket unsubResponse = new DatagramPacket(unsubBuf, unsubBuf.length);
+                        ds.receive(unsubResponse);
+                        System.out.println("Server: " + new String(unsubResponse.getData(), 0, unsubResponse.getLength()));
+                        break;
 
-                } else if (action.equals("3")) {
-                    System.out.println("Listening for auction announcements (press Enter to stop)...");
-                    Thread listener = new Thread(() -> {
-                        while (true) {
-                            try {
-                                byte[] buffer = new byte[65535];
-                                DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-                                ds.receive(packet);
-                                String msg = new String(packet.getData(), 0, packet.getLength());
-                                if (msg.equalsIgnoreCase("bye")) break;
-                                System.out.println("Broadcast: " + msg);
-                            } catch (IOException e) {
-                                System.err.println("Listener error: " + e.getMessage());
-                                break;
+                    case "3": // Listen for auction announcements
+                        System.out.println("Listening for auction announcements (press Enter to stop)...");
+                        Thread listener = new Thread(() -> {
+                            while (true) {
+                                try {
+                                    byte[] buffer = new byte[65535];
+                                    DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+                                    ds.receive(packet);
+                                    String msg = new String(packet.getData(), 0, packet.getLength());
+                                    if (msg.equalsIgnoreCase("bye")) break;
+                                    System.out.println("Broadcast: " + msg);
+                                } catch (IOException e) {
+                                    System.err.println("Listener error: " + e.getMessage());
+                                    break;
+                                }
                             }
-                        }
-                    });
-                    listener.setDaemon(true);
-                    listener.start();
-                    sc.nextLine(); // Wait for Enter
+                        });
+                        listener.setDaemon(true);
+                        listener.start();
+                        sc.nextLine(); // Wait for Enter to stop listening
+                        break;
 
-                }
-                else if (action.equals("4")) {  // New branch for placing a bid
-                    System.out.print("Enter the item name to bid on: ");
-                    String itemName = sc.nextLine().trim();
-                    System.out.print("Enter your bid amount: ");
-                    String bidAmount = sc.nextLine().trim();
-                    // The bid message includes the item name, buyer's unique name, and the bid amount.
-                    String bidMessage = "bid," + itemName + "," + uniqueName + "," + bidAmount;
-                    ds.send(new DatagramPacket(bidMessage.getBytes(), bidMessage.length(), serverIP, 420));
+                    case "4": // Place a bid
+                        System.out.print("Enter the item name to bid on: ");
+                        itemName = sc.nextLine().trim();
+                        System.out.print("Enter your bid amount: ");
+                        String bidAmount = sc.nextLine().trim();
 
-                    byte[] buf = new byte[65535];
-                    DatagramPacket responsePacket = new DatagramPacket(buf, buf.length);
-                    ds.receive(responsePacket);
-                    String response = new String(responsePacket.getData(), 0, responsePacket.getLength());
-                    System.out.println("Server: " + response);
+                        String bidMessage = "bid," + itemName + "," + uniqueName + "," + bidAmount;
+                        ds.send(new DatagramPacket(bidMessage.getBytes(), bidMessage.length(), serverIP, 420));
 
-                }
-                else if (action.equals("5")) {
-                    break;
-                } else {
-                    System.out.println("Invalid option.");
+                        byte[] bidBuf = new byte[65535];
+                        DatagramPacket bidResponse = new DatagramPacket(bidBuf, bidBuf.length);
+                        ds.receive(bidResponse);
+                        System.out.println("Server: " + new String(bidResponse.getData(), 0, bidResponse.getLength()));
+                        break;
+
+                    case "5": // Exit the loop
+                        System.out.println("Exiting...");
+                        return; // Exits the method
+
+                    default:
+                        System.out.println("Invalid option. Please select a number between 1 and 5.");
                 }
             }
         }

@@ -1,3 +1,2 @@
-
-seller1,seller,RQ#2
-buyer1,buyer,RQ#5
+Max,seller,RQ#44
+Bob,buyer,RQ#45

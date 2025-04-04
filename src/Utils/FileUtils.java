@@ -27,7 +27,6 @@ public class FileUtils {
         }
     }
 
-
     public static boolean isCapacityReached(String filePath, int maxUsers) {
         File file = new File(filePath);
         if (!file.exists()) return false;
@@ -174,7 +173,6 @@ public class FileUtils {
         return found;
     }
 
-
     public static String removeAccountByName(String filePath, String uniqueName, int requestNumber) {
         File inputFile = new File(filePath);
         File tempFile = new File(filePath + ".tmp");
@@ -220,10 +218,8 @@ public class FileUtils {
         } catch (IOException e) {
             System.err.println("Error reading subscriptions file: " + e.getMessage());
         }
-
         return subscribers;
     }
-
 
     public static List<RegistrationInfo> getAllRegisteredBuyers(String filePath) {
         List<RegistrationInfo> buyers = new ArrayList<>();
@@ -248,4 +244,46 @@ public class FileUtils {
 
         return buyers;
     }
+
+    public static boolean removeItemFromFile(String filePath, String itemName) {
+        File inputFile = new File(filePath);
+        File tempFile = new File(filePath + ".tmp");
+        boolean found = false;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(inputFile));
+             PrintWriter writer = new PrintWriter(new FileWriter(tempFile))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] tokens = line.split(",");
+                if (tokens.length >= 1 && tokens[0].trim().equalsIgnoreCase(itemName)) {
+                    found = true; // Skip this line (remove the item)
+                    continue;
+                }
+                writer.println(line); // Keep this line
+            }
+        } catch (IOException e) {
+            System.err.println("Error processing items file: " + e.getMessage());
+            return false;
+        }
+
+        // Replace original file with updated temp file
+        if (!inputFile.delete() || !tempFile.renameTo(inputFile)) {
+            System.err.println("Failed to replace items file.");
+            return false;
+        }
+
+        if (found) {
+            System.out.println("Item '" + itemName + "' has been successfully removed from the auction.");
+        } else {
+            System.out.println("Item '" + itemName + "' was not found in the auction list.");
+        }
+
+        return found;
+    }
+
+
+
+
 }
+
+

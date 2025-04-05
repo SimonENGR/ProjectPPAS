@@ -245,19 +245,23 @@ public class FileUtils {
         return buyers;
     }
 
-    public static List<RegistrationInfo> getAllSubscribers(String subscriptionFile) {
+    public static List<RegistrationInfo> getAllSubscribers(String filePath) {
         List<RegistrationInfo> subscribers = new ArrayList<>();
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(subscriptionFile))) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
             String line;
             while ((line = reader.readLine()) != null) {
-                // Assuming each line in the file is in the format: ipAddress, udpPort, itemName
+                // Assuming each line in the file is in the format: uniqueName, role, ipAddress, udpPort, tcpPort
                 String[] tokens = line.split(",");
-                if (tokens.length == 3) {
-                    String ipAddress = tokens[0].trim();
-                    int udpPort = Integer.parseInt(tokens[1].trim());
-                    String itemName = tokens[2].trim();
-                    subscribers.add(new RegistrationInfo(ipAddress, udpPort, itemName));
+                if (tokens.length >= 5) { // Ensure there are enough tokens in the line
+                    String uniqueName = tokens[0].trim();
+                    String role = tokens[1].trim();
+                    String ipAddress = tokens[2].trim();
+                    int udpPort = Integer.parseInt(tokens[3].trim());
+                    int tcpPort = Integer.parseInt(tokens[4].trim());
+
+                    // Add new RegistrationInfo object to the list
+                    subscribers.add(new RegistrationInfo(uniqueName, role, ipAddress, udpPort, tcpPort));
                 }
             }
         } catch (IOException e) {
@@ -266,7 +270,6 @@ public class FileUtils {
 
         return subscribers;
     }
-
     public static boolean removeItemFromFile(String filePath, String itemName) {
         File inputFile = new File(filePath);
         File tempFile = new File(filePath + ".tmp");

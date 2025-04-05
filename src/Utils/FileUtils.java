@@ -245,6 +245,28 @@ public class FileUtils {
         return buyers;
     }
 
+    public static List<RegistrationInfo> getAllSubscribers(String subscriptionFile) {
+        List<RegistrationInfo> subscribers = new ArrayList<>();
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(subscriptionFile))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                // Assuming each line in the file is in the format: ipAddress, udpPort, itemName
+                String[] tokens = line.split(",");
+                if (tokens.length == 3) {
+                    String ipAddress = tokens[0].trim();
+                    int udpPort = Integer.parseInt(tokens[1].trim());
+                    String itemName = tokens[2].trim();
+                    subscribers.add(new RegistrationInfo(ipAddress, udpPort, itemName));
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace(); // Log the error if there's an issue reading the file
+        }
+
+        return subscribers;
+    }
+
     public static boolean removeItemFromFile(String filePath, String itemName) {
         File inputFile = new File(filePath);
         File tempFile = new File(filePath + ".tmp");

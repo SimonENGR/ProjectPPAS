@@ -26,7 +26,7 @@ public class UDPServer {
 
 
     private static AtomicInteger requestCounter = new AtomicInteger(FileUtils.readLastRequestNumber("src/resources/last_rq.txt") + 1);
-    private static ConcurrentHashMap<String, ItemRegistry> activeAuctions = new ConcurrentHashMap<>();
+    //private static ConcurrentHashMap<String, ItemRegistry> activeAuctions = new ConcurrentHashMap<>();
 
     private static ReentrantLock auctionLock = new ReentrantLock();
 
@@ -50,25 +50,19 @@ public class UDPServer {
         try {
             String auctionLine = FileUtils.getAuctionLine(ACTIVE_AUCTIONS_FILE, itemName);
             if (auctionLine == null) {
-                System.out.println("DEBUG: Received bid for item '" + itemName + "', but auction not found.");
                 NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + requestNumber + " Reason: Item not found");
                 return;
             }
-            // Expected auction line format:
-            // itemName,description,startingPrice,currentBid,duration,RQ#...
             String[] auctionTokens = auctionLine.split(",");
             if (auctionTokens.length < 6) {
-                System.err.println("DEBUG: Auction line for " + itemName + " is malformed.");
                 NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + requestNumber + " Reason: Auction data corrupted");
                 return;
             }
             double currentBid = Double.parseDouble(auctionTokens[3].trim());
-            // (Optional: add auction expiration check here if you decide to store timing info.)
             if (bidAmount <= currentBid) {
                 NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + requestNumber + " Reason: Bid too low");
                 return;
             }
-            // Create updated auction line (update current bid)
             String updatedAuctionLine = String.format("%s,%s,%s,%.2f,%s,%s",
                     auctionTokens[0].trim(),
                     auctionTokens[1].trim(),
@@ -92,33 +86,27 @@ public class UDPServer {
 
         while (System.currentTimeMillis() < auctionEndTime) {
             try {
-                Thread.sleep(30_000);  // Sleep for 30 seconds before sending another update
+                Thread.sleep(30_000);
 
                 List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, item.getItemName());
 
                 String message = String.format("AUCTION_UPDATE %s %s %s %.2f %d",
-                        item.getRequestNumber(),                   // RQ#
+                        item.getRequestNumber(),
                         item.getItemName(),
                         item.getDescription(),
-                        item.getStartingPrice(),                   // This should be updated with current highest bid
-                        (auctionEndTime - System.currentTimeMillis()) / 60000  // Time left in minutes
+                        item.getStartingPrice(),
+                        (auctionEndTime - System.currentTimeMillis()) / 60000
                 );
 
-                // Send updates to all subscribed buyers
                 for (RegistrationInfo buyer : subscribedBuyers) {
-                    try {
-                        InetAddress address = InetAddress.getByName(buyer.getIpAddress());
-                        NetworkUtils.sendMessageToClient(ds, address, buyer.getUdpPort(), message);
-                    } catch (UnknownHostException e) {
-                        System.err.println("Error: Unable to resolve IP address for buyer " + buyer.getUniqueName() + ": " + buyer.getIpAddress());
-                    }
+                    InetAddress address = InetAddress.getByName(buyer.getIpAddress());
+                    NetworkUtils.sendMessageToClient(ds, address, buyer.getUdpPort(), message);
                 }
-            } catch (InterruptedException e) {
-                System.err.println("Auction broadcast interrupted: " + e.getMessage());
+            } catch (InterruptedException | UnknownHostException e) {
+                System.err.println("Error during auction broadcast: " + e.getMessage());
             }
         }
 
-        // Once auction ends, notify buyers and remove item
         endAuction(item, ds);
     }
 
@@ -129,7 +117,7 @@ public class UDPServer {
                 item.getRequestNumber(),
                 item.getItemName(),
                 item.getDescription(),
-                item.getStartingPrice(), // Final price (you might consider using the final bid)
+                item.getStartingPrice(),
                 0
         );
 
@@ -138,17 +126,16 @@ public class UDPServer {
                 InetAddress address = InetAddress.getByName(buyer.getIpAddress());
                 NetworkUtils.sendMessageToClient(ds, address, buyer.getUdpPort(), message);
             } catch (UnknownHostException e) {
-                System.err.println("Error: Unable to resolve IP address for buyer " + buyer.getUniqueName() + ": " + buyer.getIpAddress());
+                System.err.println("Error during auction end broadcast: " + e.getMessage());
             }
         }
 
-        // Remove auction from file under lock
         auctionLock.lock();
         try {
             if (FileUtils.removeItemFromFile(ACTIVE_AUCTIONS_FILE, item.getItemName())) {
-                System.out.println("DEBUG: Auction for item '" + item.getItemName() + "' removed from file.");
+                System.out.println("Auction for item '" + item.getItemName() + "' removed from file.");
             } else {
-                System.err.println("DEBUG: Failed to remove auction for item '" + item.getItemName() + "'.");
+                System.err.println("Failed to remove auction for item '" + item.getItemName() + "'.");
             }
         } finally {
             auctionLock.unlock();
@@ -213,26 +200,22 @@ public class UDPServer {
         }
 
         if (FileUtils.isItemLimitReached(ACTIVE_AUCTIONS_FILE, 10)) {
-            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort,
-                    "LIST-DENIED RQ#" + requestNumber + " Reason: Item limit reached");
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "LIST-DENIED RQ#" + requestNumber + " Reason: Item limit reached");
             return;
         }
+
         if (FileUtils.isDuplicateItem(ACTIVE_AUCTIONS_FILE, itemName)) {
             NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "LIST-DENIED RQ#" + requestNumber + " Reason: Item already listed");
             return;
         }
 
-        // Create new auction item. Its toString() should return a CSV line:
-        // itemName,description,startingPrice,currentBid,duration,RQ#requestNumber
         ItemRegistry newItem = new ItemRegistry(itemName, description, startingPrice, duration, requestNumber);
 
-        // Write the new auction to the file under lock.
         auctionLock.lock();
         try {
-            if (FileUtils.appendLineToFile(ACTIVE_AUCTIONS_FILE, newItem.toString())) {
+            if (FileUtils.appendLineToFile(ACTIVE_AUCTIONS_FILE, newItem.toCSV())) {
                 NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "ITEM_LISTED RQ#" + requestNumber);
-                broadcastAuctionAnnouncement(newItem.toString(), ds);
-                // Start auction broadcast in a new thread so it doesn't block the main server loop.
+                broadcastAuctionAnnouncement(newItem.toCSV(), ds);
                 new Thread(() -> startAuctionBroadcast(newItem, ds)).start();
             } else {
                 NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "LIST-DENIED RQ#" + requestNumber + " Reason: Internal server error");
@@ -290,36 +273,28 @@ public class UDPServer {
     }
 
     public void broadcastAuctionAnnouncement(String auctionCSV, DatagramSocket ds) {
-        // Parse the auction CSV. Expected order:
-        // itemName,description,startingPrice,currentBid,duration,RQ#
         String[] tokens = auctionCSV.split(",");
         if (tokens.length < 6) {
-            System.err.println("DEBUG: Auction CSV is malformed, cannot broadcast announcement.");
+            System.err.println("Auction CSV is malformed, cannot broadcast.");
             return;
         }
-        String rq = tokens[5].trim();
-        String itemName = tokens[0].trim();
-        String description = tokens[1].trim();
-        double startingPrice = Double.parseDouble(tokens[2].trim());
-        // Here, we still use startingPrice in the announcement;
-        // you might want to use the current bid instead.
-        long duration = Long.parseLong(tokens[4].trim());
 
         String message = String.format("AUCTION_ANNOUNCE %s %s %s %.2f %d",
-                rq,
-                itemName,
-                description,
-                startingPrice,
-                duration / 60000);
-        List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, itemName);
-        for (RegistrationInfo buyer : subscribedBuyers) {
+                tokens[5].trim(), // RQ#
+                tokens[0].trim(), // Item Name
+                tokens[1].trim(), // Description
+                Double.parseDouble(tokens[2].trim()), // Starting Price
+                Long.parseLong(tokens[4].trim()) / 60000  // Duration in minutes
+        );
+
+        FileUtils.getAllSubscribers(SUBSCRIPTION_FILE).forEach(subscriber -> {
             try {
-                InetAddress address = InetAddress.getByName(buyer.getIpAddress());
-                NetworkUtils.sendMessageToClient(ds, address, buyer.getUdpPort(), message);
-            } catch (IOException e) {
-                System.err.println("Error broadcasting to " + buyer.getIpAddress() + ": " + e.getMessage());
+                InetAddress address = InetAddress.getByName(subscriber.getIpAddress());
+                NetworkUtils.sendMessageToClient(ds, address, subscriber.getUdpPort(), message);
+            } catch (UnknownHostException e) {
+                System.err.println("Error broadcasting auction announcement: " + e.getMessage());
             }
-        }
+        });
     }
 
     public static void main(String[] args) throws IOException {

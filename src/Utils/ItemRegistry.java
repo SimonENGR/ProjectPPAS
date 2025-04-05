@@ -55,4 +55,16 @@ public class ItemRegistry {
                 ", timeRemaining = " + getTimeRemaining() / 60000 + " minutes" +
                 ", requestNumber = RQ#" + requestNumber;
     }
+
+    public String toCSV() {
+        return String.format("%s,%s,%.2f,%.2f,%s,%d,%d",
+                itemName,                          // itemName
+                description,                       // description
+                startingPrice,                     // startingPrice
+                currentPrice,                      // currentPrice
+                (highestBidder != null ? highestBidder : ""), // highestBidder (empty if null)
+                duration,                          // duration
+                requestNumber                      // requestNumber
+        );
+    }
 }

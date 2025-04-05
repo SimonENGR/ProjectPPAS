@@ -82,7 +82,7 @@ public class UDPClient {
             System.out.print("Enter item description: ");
             String description = sc.nextLine().trim();
 
-            System.out.print("Enter starting price: ");
+            System.out.print("Enter starting price (whole number only): ");
             String startingPrice = sc.nextLine().trim();
 
             System.out.print("Enter duration (in minutes): ");

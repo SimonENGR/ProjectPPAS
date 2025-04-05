@@ -1,0 +1,1 @@
+itemName = headphones, description: bose, startingPrice = 150.0, currentPrice = 150.0, highestBidder = None, duration = 3600000, timeRemaining = 60 minutes, requestNumber = RQ#54

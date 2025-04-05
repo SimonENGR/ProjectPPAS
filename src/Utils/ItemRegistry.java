@@ -30,9 +30,19 @@ public class ItemRegistry {
     public long getStartTime() { return startTime; }
     public int getRequestNumber() { return requestNumber; }
 
-    public long getTimeRemaining() {
+    public void setHighestBidder(String highestBidder) {
+        this.highestBidder = highestBidder;
+    }
+
+    public String getTimeRemaining() {
         long elapsed = System.currentTimeMillis() - startTime;
-        return Math.max(0, duration - elapsed);
+        long remaining = Math.max(0, duration - elapsed);
+
+        long hours = remaining / 3600000;
+        long minutes = (remaining % 3600000) / 60000;
+        long seconds = (remaining % 60000) / 1000;
+
+        return String.format("%02d:%02d:%02d", hours, minutes, seconds);
     }
 
     public boolean placeBid(String bidder, double bidAmount) {
@@ -44,17 +54,6 @@ public class ItemRegistry {
         return false;
     }
 
-    @Override
-    public String toString() {
-        return  "itemName = " + itemName +
-                ", description: " + description +
-                ", startingPrice = " + startingPrice +
-                ", currentPrice = " + currentPrice +
-                ", highestBidder = " + highestBidder +
-                ", duration = " + duration +
-                ", timeRemaining = " + getTimeRemaining() / 60000 + " minutes" +
-                ", requestNumber = RQ#" + requestNumber;
-    }
 
     public String toCSV() {
         return String.format("%s,%s,%.2f,%.2f,%s,%d,%d,RQ#%d",

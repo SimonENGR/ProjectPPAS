@@ -296,19 +296,20 @@ public class UDPServer {
             System.err.println("DEBUG: Auction CSV is malformed, cannot broadcast announcement.");
             return;
         }
-        String rq = tokens[5].trim();
+        String rq = tokens[7].trim();  // RQ# is now in the 7th position
         String itemName = tokens[0].trim();
         String description = tokens[1].trim();
         double startingPrice = Double.parseDouble(tokens[2].trim());
-        // Here, we still use startingPrice in the announcement;
-        // you might want to use the current bid instead.
-        long duration = Long.parseLong(tokens[4].trim());
+        double currentPrice = Double.parseDouble(tokens[3].trim());
+        String highestBidder = tokens[4].trim();  // highestBidder is in the 5th position (index 4)
+        long duration = Long.parseLong(tokens[5].trim());
 
-        String message = String.format("AUCTION_ANNOUNCE %s %s %s %.2f %d",
+        String message = String.format("AUCTION_ANNOUNCE %s %s %s %.2f %s %d",
                 rq,
                 itemName,
                 description,
-                startingPrice,
+                currentPrice,
+                highestBidder,
                 duration / 60000);
         List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, itemName);
         for (RegistrationInfo buyer : subscribedBuyers) {

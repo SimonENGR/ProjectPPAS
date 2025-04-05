@@ -270,6 +270,7 @@ public class FileUtils {
 
         return subscribers;
     }
+
     public static boolean removeItemFromFile(String filePath, String itemName) {
         File inputFile = new File(filePath);
         File tempFile = new File(filePath + ".tmp");

@@ -222,16 +222,16 @@ public class UDPServer {
             return;
         }
 
-        // Create new auction item. Its toString() should return a CSV line:
+        // Create new auction item. Its toCSV() should return a CSV line:
         // itemName,description,startingPrice,currentBid,duration,RQ#requestNumber
         ItemRegistry newItem = new ItemRegistry(itemName, description, startingPrice, duration, requestNumber);
 
         // Write the new auction to the file under lock.
         auctionLock.lock();
         try {
-            if (FileUtils.appendLineToFile(ACTIVE_AUCTIONS_FILE, newItem.toString())) {
+            if (FileUtils.appendLineToFile(ACTIVE_AUCTIONS_FILE, newItem.toCSV())) {
                 NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "ITEM_LISTED RQ#" + requestNumber);
-                broadcastAuctionAnnouncement(newItem.toString(), ds);
+                broadcastAuctionAnnouncement(newItem.toCSV(), ds);
                 // Start auction broadcast in a new thread so it doesn't block the main server loop.
                 new Thread(() -> startAuctionBroadcast(newItem, ds)).start();
             } else {

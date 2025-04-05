@@ -281,6 +281,59 @@ public class FileUtils {
         return found;
     }
 
+    public static String getAuctionLine(String filePath, String itemName) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                // Assumes the first token is the item name
+                String[] tokens = line.split(",");
+                if (tokens.length > 0 && tokens[0].trim().equalsIgnoreCase(itemName)) {
+                    return line;
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error reading auctions file: " + e.getMessage());
+        }
+        return null;
+    }
+
+    public static boolean updateAuctionLine(String filePath, String itemName, String updatedLine) {
+        File inputFile = new File(filePath);
+        File tempFile = new File(filePath + ".tmp");
+        boolean updated = false;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(inputFile));
+             PrintWriter writer = new PrintWriter(new FileWriter(tempFile))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] tokens = line.split(",");
+                if (tokens.length > 0 && tokens[0].trim().equalsIgnoreCase(itemName)) {
+                    writer.println(updatedLine);
+                    updated = true;
+                } else {
+                    writer.println(line);
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error updating auctions file: " + e.getMessage());
+            return false;
+        }
+
+        // Replace original file with updated file
+        if (!inputFile.delete() || !tempFile.renameTo(inputFile)) {
+            System.err.println("Error replacing the auctions file during update.");
+            return false;
+        }
+
+        if (updated) {
+            System.out.println("Auction for item '" + itemName + "' updated successfully.");
+        } else {
+            System.out.println("Auction for item '" + itemName + "' not found. Update failed.");
+        }
+        return updated;
+    }
+
+
 
 
 

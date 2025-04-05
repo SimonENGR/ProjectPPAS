@@ -12,9 +12,10 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class UDPServer {
 
@@ -26,7 +27,6 @@ public class UDPServer {
 
 
     private static AtomicInteger requestCounter = new AtomicInteger(FileUtils.readLastRequestNumber("src/resources/last_rq.txt") + 1);
-    private static ConcurrentHashMap<String, ItemRegistry> activeAuctions = new ConcurrentHashMap<>();
 
     private static ReentrantLock auctionLock = new ReentrantLock();
 
@@ -324,79 +324,87 @@ public class UDPServer {
 
     public static void main(String[] args) throws IOException {
         DatagramSocket ds = new DatagramSocket(420);
-        byte[] receive = new byte[65535];
-        DatagramPacket dpReceive;
         UDPServer server = new UDPServer();
         System.out.println("Server listening on port 420...");
 
+        ExecutorService pool = Executors.newFixedThreadPool(10);
+
         while (true) {
-            dpReceive = new DatagramPacket(receive, receive.length);
+            byte[] receive = new byte[65535];
+            DatagramPacket dpReceive = new DatagramPacket(receive, receive.length);
             ds.receive(dpReceive);
-            String msg = new String(dpReceive.getData(), 0, dpReceive.getLength());
-            System.out.println("Received message: " + msg);
 
-            if (MessageParser.isGetAllItemsRequest(msg)) {
-                String items = FileUtils.readFileAsString(ACTIVE_AUCTIONS_FILE);
-                NetworkUtils.sendMessageToClient(ds, dpReceive.getAddress(), dpReceive.getPort(), items);
-                receive = new byte[65535];
-                continue;
-            }
+            // Copy the message and socket data into final variables for thread use
+            byte[] data = new byte[dpReceive.getLength()];
+            System.arraycopy(dpReceive.getData(), 0, data, 0, dpReceive.getLength());
 
-            if (msg.equalsIgnoreCase("bye")) {
-                System.out.println("Client sent bye...EXITING");
-                break;
-            }
+            InetAddress clientAddress = dpReceive.getAddress();
+            int clientPort = dpReceive.getPort();
 
-            String[] tokens = msg.split(",");
-            if (tokens.length < 2) {
-                System.err.println("DEBUG: Invalid message format.");
-                continue;
-            }
+            pool.execute(() -> {
+                String msg = new String(data);
+                System.out.println("Received message: " + msg);
 
-            String action = tokens[0].trim().toLowerCase();
-            int requestNumber = requestCounter.getAndIncrement();
-            FileUtils.writeLastRequestNumber("src/resources/last_rq.txt", requestNumber);
+                if (MessageParser.isGetAllItemsRequest(msg)) {
+                    String items = FileUtils.readFileAsString("src/resources/activeAuctions.txt");
+                    NetworkUtils.sendMessageToClient(ds, clientAddress, clientPort, items);
+                    return;
+                }
 
-            switch (action) {
-                case "register":
-                    try {
-                        RegistrationInfo regInfo = MessageParser.parseRegistrationMessage(msg);
-                        System.out.println("DEBUG: Parsed Registration Information: " + regInfo);
-                        server.registerAccount(regInfo, requestNumber, ds, dpReceive);
-                    } catch (IllegalArgumentException e) {
-                        System.err.println("DEBUG: Error parsing registration message: " + e.getMessage());
-                        String errorMessage = "Register-denied RQ#" + requestNumber + " Reason: " + e.getMessage();
-                        NetworkUtils.sendMessageToClient(ds, dpReceive.getAddress(), dpReceive.getPort(), errorMessage);
-                    }
-                    break;
+                if (msg.equalsIgnoreCase("bye")) {
+                    System.out.println("Client sent bye...EXITING");
+                    return;
+                }
 
-                case "deregister":
-                    String uniqueName = tokens[1].trim();
-                    server.deregisterAccount(uniqueName, ds, dpReceive.getAddress(), dpReceive.getPort(), requestNumber);
-                    break;
+                String[] tokens = msg.split(",");
+                if (tokens.length < 2) {
+                    System.err.println("DEBUG: Invalid message format.");
+                    return;
+                }
 
-                case "list_item":
-                    server.listItem(msg, requestNumber, ds, dpReceive.getAddress(), dpReceive.getPort());
-                    break;
+                String action = tokens[0].trim().toLowerCase();
+                int requestNumber = requestCounter.getAndIncrement();
+                FileUtils.writeLastRequestNumber("src/resources/last_rq.txt", requestNumber);
 
-                case "subscribe":
-                    server.handleSubscribe(msg, requestNumber, ds, dpReceive.getAddress(), dpReceive.getPort());
-                    break;
+                switch (action) {
+                    case "register":
+                        try {
+                            RegistrationInfo regInfo = MessageParser.parseRegistrationMessage(msg);
+                            System.out.println("DEBUG: Parsed Registration Information: " + regInfo);
+                            server.registerAccount(regInfo, requestNumber, ds, new DatagramPacket(data, data.length, clientAddress, clientPort));
+                        } catch (IllegalArgumentException e) {
+                            String errorMessage = "Register-denied RQ#" + requestNumber + " Reason: " + e.getMessage();
+                            NetworkUtils.sendMessageToClient(ds, clientAddress, clientPort, errorMessage);
+                        }
+                        break;
 
-                case "de-subscribe":
-                    server.handleDeSubscribe(msg, requestNumber, ds, dpReceive.getAddress(), dpReceive.getPort());
-                    break;
+                    case "deregister":
+                        String uniqueName = tokens[1].trim();
+                        server.deregisterAccount(uniqueName, ds, clientAddress, clientPort, requestNumber);
+                        break;
 
-                case "bid":
-                    server.placeBid(msg, requestNumber, ds, dpReceive.getAddress(), dpReceive.getPort());
-                    break;
+                    case "list_item":
+                        server.listItem(msg, requestNumber, ds, clientAddress, clientPort);
+                        break;
 
-                default:
-                    System.err.println("DEBUG: Unknown action: " + action);
-                    break;
-            }
-            receive = new byte[65535];
+                    case "subscribe":
+                        server.handleSubscribe(msg, requestNumber, ds, clientAddress, clientPort);
+                        break;
+
+                    case "de-subscribe":
+                        server.handleDeSubscribe(msg, requestNumber, ds, clientAddress, clientPort);
+                        break;
+
+                    case "bid":
+                        server.placeBid(msg, requestNumber, ds, clientAddress, clientPort);
+                        break;
+
+                    default:
+                        System.err.println("DEBUG: Unknown action: " + action);
+                        break;
+                }
+            });
         }
-        ds.close();
     }
+
 }

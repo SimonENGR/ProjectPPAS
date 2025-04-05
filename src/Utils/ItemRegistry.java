@@ -44,18 +44,6 @@ public class ItemRegistry {
         return false;
     }
 
-    @Override
-    public String toString() {
-        return  "itemName = " + itemName +
-                ", description: " + description +
-                ", startingPrice = " + startingPrice +
-                ", currentPrice = " + currentPrice +
-                ", highestBidder = " + highestBidder +
-                ", duration = " + duration +
-                ", timeRemaining = " + getTimeRemaining() / 60000 + " minutes" +
-                ", requestNumber = RQ#" + requestNumber;
-    }
-
     public String toCSV() {
         return String.format("%s,%s,%.2f,%.2f,%s,%d,%d,RQ#%d",
                 itemName,
@@ -67,4 +55,25 @@ public class ItemRegistry {
                 startTime,
                 requestNumber);
     }
+
+    public static ItemRegistry fromCSV(String csv) {
+        String[] tokens = csv.split(",");
+        if (tokens.length < 8) throw new IllegalArgumentException("Malformed auction line");
+
+        String itemName = tokens[0].trim();
+        String description = tokens[1].trim();
+        double startingPrice = Double.parseDouble(tokens[2].trim());
+        double currentPrice = Double.parseDouble(tokens[3].trim());
+        String highestBidder = tokens[4].trim();
+        long duration = Long.parseLong(tokens[5].trim());
+        long startTime = Long.parseLong(tokens[6].trim());
+        int requestNumber = Integer.parseInt(tokens[7].trim().split("#")[1]);
+
+        ItemRegistry item = new ItemRegistry(itemName, description, startingPrice, duration, requestNumber);
+        item.currentPrice = currentPrice;
+        item.highestBidder = highestBidder;
+        item.startTime = startTime;
+        return item;
+    }
+
 }

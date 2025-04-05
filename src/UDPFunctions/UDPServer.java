@@ -99,8 +99,8 @@ public class UDPServer {
                         item.getRequestNumber(),                   // RQ#
                         item.getItemName(),
                         item.getDescription(),
-                        item.getStartingPrice(),                   // This should be updated with current highest bid
-                        (auctionEndTime - System.currentTimeMillis()) / 60000  // Time left in minutes
+                        item.getCurrentPrice(),                   // This should be updated with current highest bid
+                        item.getTimeRemaining() / 60000  // Time left in minutes
                 );
 
                 // Send updates to all subscribed buyers
@@ -291,26 +291,21 @@ public class UDPServer {
     public void broadcastAuctionAnnouncement(String auctionCSV, DatagramSocket ds) {
         // Parse the auction CSV. Expected order:
         // itemName,description,startingPrice,currentBid,duration,RQ#
-        String[] tokens = auctionCSV.split(",");
-        if (tokens.length < 6) {
-            System.err.println("DEBUG: Auction CSV is malformed, cannot broadcast announcement.");
+        ItemRegistry item;
+        try {
+            item = ItemRegistry.fromCSV(auctionCSV);
+        } catch (Exception e) {
+            System.err.println("Failed to parse auction CSV: " + e.getMessage());
             return;
         }
-        String rq = tokens[5].trim();
-        String itemName = tokens[0].trim();
-        String description = tokens[1].trim();
-        double startingPrice = Double.parseDouble(tokens[2].trim());
-        // Here, we still use startingPrice in the announcement;
-        // you might want to use the current bid instead.
-        long duration = Long.parseLong(tokens[4].trim());
 
         String message = String.format("AUCTION_ANNOUNCE %s %s %s %.2f %d",
-                rq,
-                itemName,
-                description,
-                startingPrice,
-                duration / 60000);
-        List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, itemName);
+                item.getRequestNumber(),
+                item.getItemName(),
+                item.getDescription(),
+                item.getCurrentPrice(),
+                item.getTimeRemaining() / 60000);
+        List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, item.getItemName());
         for (RegistrationInfo buyer : subscribedBuyers) {
             try {
                 InetAddress address = InetAddress.getByName(buyer.getIpAddress());

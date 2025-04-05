@@ -57,14 +57,14 @@ public class ItemRegistry {
     }
 
     public String toCSV() {
-        return String.format("%s,%s,%.2f,%.2f,%s,%d,%d",
-                itemName,                          // itemName
-                description,                       // description
-                startingPrice,                     // startingPrice
-                currentPrice,                      // currentPrice
-                (highestBidder != null ? highestBidder : ""), // highestBidder (empty if null)
-                duration,                          // duration
-                requestNumber                      // requestNumber
-        );
+        return String.format("%s,%s,%.2f,%.2f,%s,%d,%d,RQ#%d",
+                itemName,
+                description,
+                startingPrice,
+                currentPrice,
+                highestBidder,
+                duration,
+                startTime,
+                requestNumber);
     }
 }

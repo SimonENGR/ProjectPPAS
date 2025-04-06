@@ -1,5 +1,6 @@
 package UDPFunctions;
 
+import TCPFunctions.TCPConnection;
 import Utils.RegistrationInfo;
 import Utils.ItemRegistry;
 import Utils.FileUtils;
@@ -271,10 +272,6 @@ public class UDPServer {
     public void endAuction(ItemRegistry item, DatagramSocket ds) {
         List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, item.getItemName());
 
-        // Find the highest bidder
-        String highestBidder = item.getHighestBidder();  // Assuming item keeps track of the highest bidder
-        double finalPrice = item.getCurrentPrice();  // Final bid price
-
 //        String message = String.format("AUCTION_ENDED %s %s %s %.2f %d",
 //                item.getRequestNumber(),
 //                item.getItemName(),
@@ -287,8 +284,8 @@ public class UDPServer {
                 item.getRequestNumber(),
                 item.getItemName(),
                 item.getDescription(),
-                finalPrice, // Final price (you might consider using the final bid)
-                highestBidder,
+                item.getCurrentPrice(), // Final price (you might consider using the final bid)
+                item.getHighestBidder(),
                 0
         );
 
@@ -303,21 +300,55 @@ public class UDPServer {
             }
         }
 
-        // Notify the seller about the auction end
+        // Notify the seller over TCP
         RegistrationInfo seller = FileUtils.getUserByName(FILE_PATH, item.getSellerName());
         if (seller != null) {
-            String sellerMessage = String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f,%s",
+            String sellerMessage;
+
+            // TCP message logic for seller
+            if (item.getCurrentPrice() >= item.getStartingPrice()) {
+                sellerMessage = String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f\nItem sold to %s!",
+                        item.getRequestNumber(),
+                        item.getItemName(),
+                        item.getDescription(),
+                        item.getCurrentPrice(),
+                        item.getHighestBidder());
+            } else {
+                sellerMessage = String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f,%s\nNo sale - item did not meet the reserve price.",
+                        item.getRequestNumber(),
+                        item.getItemName(),
+                        item.getDescription(),
+                        item.getCurrentPrice(),
+                        item.getHighestBidder());
+            }
+
+            // TCP Connection to the seller
+            try {
+                TCPConnection tcpSellerConnection = new TCPConnection(seller.getIpAddress(), seller.getTcpPort());
+                tcpSellerConnection.sendMessage(sellerMessage);  // Send the seller message via TCP
+                tcpSellerConnection.close();
+            } catch (IOException e) {
+                System.err.println("Error sending TCP message to seller " + seller.getUniqueName());
+            }
+        }
+
+        // Notify the highest bidder over TCP
+        RegistrationInfo highestBidder = FileUtils.getUserByName(FILE_PATH, item.getHighestBidder());
+        if (highestBidder != null) {
+            String bidderMessage = String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f,%s\nCongratulations! You won the auction!",
                     item.getRequestNumber(),
                     item.getItemName(),
                     item.getDescription(),
-                    finalPrice,
-                    highestBidder);
+                    item.getCurrentPrice(),
+                    item.getHighestBidder());
 
+            // TCP Connection to the highest bidder
             try {
-                InetAddress sellerAddress = InetAddress.getByName(seller.getIpAddress());
-                NetworkUtils.sendMessageToClient(ds, sellerAddress, seller.getUdpPort(), sellerMessage);
-            } catch (UnknownHostException e) {
-                System.err.println("Error: Unable to resolve IP address for seller " + seller.getUniqueName() + ": " + seller.getIpAddress());
+                TCPConnection tcpBidderConnection = new TCPConnection(highestBidder.getIpAddress(), highestBidder.getTcpPort());
+                tcpBidderConnection.sendMessage(bidderMessage);  // Send the winner message via TCP
+                tcpBidderConnection.close();
+            } catch (IOException e) {
+                System.err.println("Error sending TCP message to highest bidder " + highestBidder.getUniqueName());
             }
         }
 

@@ -58,7 +58,7 @@ public class UDPServer {
             }
 
             String[] auctionTokens = auctionLine.split(",");
-            if (auctionTokens.length != 9) {
+            if (auctionTokens.length != 10) {
                 System.err.println("DEBUG: Auction line for " + itemName + " is malformed.");
                 NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + rqNum + " Reason: Auction data corrupted");
                 return;
@@ -70,7 +70,7 @@ public class UDPServer {
                 return;
             }
 
-            String updatedAuctionLine = String.format("%s,%s,%s,%.2f,%.2f,%s,%s,%s,RQ#%s",
+            String updatedAuctionLine = String.format("%s,%s,%s,%.2f,%.2f,%s,%s,%s,%s,RQ#%s",
                     auctionTokens[0].trim(),
                     auctionTokens[1].trim(),
                     auctionTokens[2].trim(),
@@ -79,7 +79,8 @@ public class UDPServer {
                     bidderName,
                     auctionTokens[6].trim(),
                     auctionTokens[7].trim(),
-                    auctionTokens[8].trim().replace("RQ#", "")
+                    auctionTokens[8].trim(),
+                    auctionTokens[9].trim().replace("RQ#", "")
             );
 
             if (FileUtils.updateAuctionLine(ACTIVE_AUCTIONS_FILE, itemName, updatedAuctionLine)) {
@@ -126,6 +127,68 @@ public class UDPServer {
         }
     }
 
+    public void handleAcceptNegotiation(String message, DatagramSocket ds, InetAddress clientIP, int clientPort) {
+        String[] tokens = message.split("\\s+");
+        if (tokens.length != 4) {
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "ACCEPT-DENIED Reason: Invalid format");
+            return;
+        }
+
+        String rqTag = tokens[1].trim(); // RQ#
+        String itemName = tokens[2].trim();
+        double newPrice;
+
+        try {
+            newPrice = Double.parseDouble(tokens[3].trim());
+        } catch (NumberFormatException e) {
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "ACCEPT-DENIED " + rqTag + " Reason: Invalid price");
+            return;
+        }
+
+        auctionLock.lock();
+        try {
+            String auctionLine = FileUtils.getAuctionLine(ACTIVE_AUCTIONS_FILE, itemName);
+            if (auctionLine == null) {
+                NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "ACCEPT-DENIED " + rqTag + " Reason: Item not found");
+                return;
+            }
+
+            ItemRegistry item = ItemRegistry.fromCSV(auctionLine);
+            item.placeBid("None", newPrice); // Update price, reset bidder
+            FileUtils.updateAuctionLine(ACTIVE_AUCTIONS_FILE, itemName, item.toCSV());
+
+            // Broadcast PRICE_ADJUSTMENT to subscribers
+            List<RegistrationInfo> subs = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, itemName);
+            String messageToSubs = String.format("PRICE_ADJUSTMENT RQ#%d %s %.2f %d",
+                    item.getRequestNumber(), item.getItemName(), item.getCurrentPrice(), item.getTimeRemaining() / 60000);
+            for (RegistrationInfo buyer : subs) {
+                try {
+                    InetAddress address = InetAddress.getByName(buyer.getIpAddress());
+                    NetworkUtils.sendMessageToClient(ds, address, buyer.getUdpPort(), messageToSubs);
+                } catch (Exception e) {
+                    System.err.println("Error sending PRICE_ADJUSTMENT to " + buyer.getUniqueName());
+                }
+            }
+
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "ACCEPTED RQ#" + rqTag);
+        } finally {
+            auctionLock.unlock();
+        }
+    }
+
+    public void handleRefuseNegotiation(String message, DatagramSocket ds, InetAddress clientIP, int clientPort) {
+        String[] tokens = message.split("\\s+");
+        if (tokens.length < 4) {
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "REFUSE-DENIED Reason: Invalid format");
+            return;
+        }
+
+        String rqTag = tokens[1].trim(); // RQ#
+        String itemName = tokens[2].trim();
+
+        NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "REFUSED RQ#" + rqTag);
+    }
+
     public void startAuctionBroadcast(ItemRegistry item, DatagramSocket ds) {
         long auctionEndTime = System.currentTimeMillis() + item.getDuration();
 
@@ -136,16 +199,46 @@ public class UDPServer {
                 String auctionLine = FileUtils.getAuctionLine("src/resources/activeAuctions.txt", item.getItemName());
                 if (auctionLine == null) return; // item removed
 
-                // ✅ Create updated item object
+                // ✅ Create updated item object FIRST
                 ItemRegistry updatedItem = ItemRegistry.fromCSV(auctionLine);
 
+                // 🟨 Check negotiation conditions
+                if (!updatedItem.isNegotiationSent()
+                        && updatedItem.getHighestBidder().equals("None")
+                        && updatedItem.getTimeRemaining() <= (updatedItem.getDuration() / 2)) {
+
+                    String negotiateMessage = String.format(
+                            "NEGOTIATE_REQ RQ#%d %s %.2f %d",
+                            updatedItem.getRequestNumber(),
+                            updatedItem.getItemName(),
+                            updatedItem.getCurrentPrice(),
+                            updatedItem.getTimeRemaining() / 60000
+                    );
+
+                    RegistrationInfo seller = FileUtils.getUserByName(FILE_PATH, updatedItem.getSellerName());
+                    if (seller != null) {
+                        try {
+                            InetAddress sellerAddress = InetAddress.getByName(seller.getIpAddress());
+                            NetworkUtils.sendMessageToClient(ds, sellerAddress, seller.getUdpPort(), negotiateMessage);
+                            System.out.println("🔁 Sent NEGOTIATE_REQ to seller: " + seller.getUniqueName());
+                        } catch (Exception e) {
+                            System.err.println("Error sending negotiation request to seller: " + e.getMessage());
+                        }
+                    }
+
+                    // ✅ Mark negotiation as sent and persist it
+                    updatedItem.setNegotiationSent(true);
+                    FileUtils.updateAuctionLine(ACTIVE_AUCTIONS_FILE, updatedItem.getItemName(), updatedItem.toCSV());
+                }
+
+                // 🟩 Broadcast AUCTION_UPDATE
                 List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem("src/resources/subscriptions.txt", item.getItemName());
 
                 String message = String.format("AUCTION_UPDATE RQ#%d,Item: %s,Desc: %s,Price: %.2f,TimeLeft(min): %d",
                         updatedItem.getRequestNumber(),
                         updatedItem.getItemName(),
                         updatedItem.getDescription(),
-                        updatedItem.getCurrentPrice(),  // ✅ now reflects updated price
+                        updatedItem.getCurrentPrice(),
                         updatedItem.getTimeRemaining() / 60000
                 );
 
@@ -157,6 +250,7 @@ public class UDPServer {
                         System.err.println("Error: Unable to resolve IP for " + buyer.getUniqueName());
                     }
                 }
+
                 RegistrationInfo seller = FileUtils.getUserByName(FILE_PATH, updatedItem.getSellerName());
                 if (seller != null) {
                     try {
@@ -174,6 +268,7 @@ public class UDPServer {
 
         endAuction(item, ds);
     }
+
 
 
     public void endAuction(ItemRegistry item, DatagramSocket ds) {
@@ -464,6 +559,14 @@ public class UDPServer {
 
                     case "bid":
                         server.placeBid(msg, ds, clientAddress, clientPort);
+                        break;
+
+                    case "accept":
+                        server.handleAcceptNegotiation(msg, ds, clientAddress, clientPort);
+                        break;
+
+                    case "refuse":
+                        server.handleRefuseNegotiation(msg, ds, clientAddress, clientPort);
                         break;
 
                     default:

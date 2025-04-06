@@ -177,7 +177,6 @@ public class UDPServer {
         }
     }
 
-
     public void handleRefuseNegotiation(String message, DatagramSocket ds, InetAddress clientIP, int clientPort) {
         String[] tokens = message.split("\\s+");
         if (tokens.length < 3) {
@@ -188,7 +187,6 @@ public class UDPServer {
         String rqTag = tokens[1].trim(); // RQ#
         NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "REFUSED " + rqTag);
     }
-
 
     public void startAuctionBroadcast(ItemRegistry item, DatagramSocket ds) {
         long auctionEndTime = System.currentTimeMillis() + item.getDuration();
@@ -270,25 +268,56 @@ public class UDPServer {
         endAuction(item, ds);
     }
 
-
-
     public void endAuction(ItemRegistry item, DatagramSocket ds) {
         List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, item.getItemName());
 
-        String message = String.format("AUCTION_ENDED %s %s %s %.2f %d",
+        // Find the highest bidder
+        String highestBidder = item.getHighestBidder();  // Assuming item keeps track of the highest bidder
+        double finalPrice = item.getCurrentPrice();  // Final bid price
+
+//        String message = String.format("AUCTION_ENDED %s %s %s %.2f %d",
+//                item.getRequestNumber(),
+//                item.getItemName(),
+//                item.getDescription(),
+//                item.getStartingPrice(), // Final price (you might consider using the final bid)
+//                0
+//        );
+
+        String message = String.format("AUCTION_ENDED %s %s %s %.2f %s %d",
                 item.getRequestNumber(),
                 item.getItemName(),
                 item.getDescription(),
-                item.getStartingPrice(), // Final price (you might consider using the final bid)
+                finalPrice, // Final price (you might consider using the final bid)
+                highestBidder,
                 0
         );
 
+
+        // Notify all subscribed buyers about the auction result
         for (RegistrationInfo buyer : subscribedBuyers) {
             try {
                 InetAddress address = InetAddress.getByName(buyer.getIpAddress());
                 NetworkUtils.sendMessageToClient(ds, address, buyer.getUdpPort(), message);
             } catch (UnknownHostException e) {
                 System.err.println("Error: Unable to resolve IP address for buyer " + buyer.getUniqueName() + ": " + buyer.getIpAddress());
+            }
+        }
+
+        // Notify the seller about the auction end
+        RegistrationInfo seller = FileUtils.getUserByName(FILE_PATH, item.getSellerName());
+        if (seller != null) {
+            String sellerMessage = String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f,%s",
+                    item.getRequestNumber(),
+                    item.getItemName(),
+                    item.getDescription(),
+                    finalPrice,
+                    highestBidder);
+
+            try {
+                InetAddress sellerAddress = InetAddress.getByName(seller.getIpAddress());
+                NetworkUtils.sendMessageToClient(ds, sellerAddress, seller.getUdpPort(), sellerMessage);
+            } catch (UnknownHostException e) {
+                System.err.println("Error: Unable to resolve IP address for seller " + seller.getUniqueName() + ": " + seller.getIpAddress());
             }
         }
 
@@ -432,8 +461,6 @@ public class UDPServer {
         }
     }
 
-
-
     public void handleDeSubscribe(String message, DatagramSocket ds, InetAddress clientIP, int clientPort) {
         String[] tokens = message.split(",", 4);
         if (tokens.length != 4) {
@@ -455,7 +482,6 @@ public class UDPServer {
             NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "UNSUBSCRIBE-DENIED RQ#" + rqNum + " Reason: Subscription not found");
         }
     }
-
 
     public void broadcastAuctionAnnouncement(String auctionCSV, DatagramSocket ds) {
         // Parse the auction CSV. Expected order:

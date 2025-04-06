@@ -1,6 +1,9 @@
 package UDPFunctions;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
 import java.net.*;
 import java.util.Scanner;
 import java.util.concurrent.BlockingQueue;
@@ -154,6 +157,10 @@ public class UDPClient {
 
                         if (response != null && response.toLowerCase().contains("registered")) {
                             registered = true;
+
+                            // After successful registration, establish a TCP connection for auction notifications
+                            startTCPConnection(clientIP, tcpPort);
+
                         } else {
                             System.out.println("❌ Registration failed (duplicate name or capacity). Try again.");
                         }
@@ -348,6 +355,32 @@ public class UDPClient {
         listener.start();
         sc.nextLine(); // Wait for user to press Enter
         listener.interrupt();
+    }
+
+    // Establish TCP connection for auction notifications
+    private void startTCPConnection(String clientIP, String tcpPort) {
+        try {
+            // Convert TCP port from String to Integer
+            int tcpPortNumber = Integer.parseInt(tcpPort);
+
+            // Create a TCP socket to the server
+            Socket socket = new Socket(clientIP, tcpPortNumber);
+
+            // Create output stream to send messages to server (auction notifications)
+            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+
+            // Create input stream to receive auction results
+            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
+            // Listen for auction notifications from the server
+            String auctionResult;
+            while ((auctionResult = in.readLine()) != null) {
+                System.out.println("Auction Notification: " + auctionResult);
+            }
+
+        } catch (IOException e) {
+            System.err.println("Error establishing TCP connection: " + e.getMessage());
+        }
     }
 
     public static void main(String[] args) throws IOException {

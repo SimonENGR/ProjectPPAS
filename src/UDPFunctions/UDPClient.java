@@ -42,7 +42,8 @@ public class UDPClient {
         byte[] buf = message.getBytes();
         socket.send(new DatagramPacket(buf, buf.length, serverAddress, serverPort));
 
-        String rqTag = extractRequestNumber(message);
+        boolean expectRQ = message.matches(".*\\b\\d{3,5}\\b.*");
+        String rqTag = expectRQ ? extractRequestNumber(message) : "";
         long startTime = System.currentTimeMillis();
 
         while (true) {
@@ -56,11 +57,15 @@ public class UDPClient {
                     Thread.sleep(100);
                     continue;
                 }
-                if (rqTag.isEmpty() || response.contains(rqTag)) {
+                if (!expectRQ || response.contains(rqTag)) {
                     System.out.println("Server Response: " + response);
                     return;
                 } else {
-                    System.out.println("Skipping unrelated message: " + response);
+                    if (response.startsWith("AUCTION_UPDATE") || response.startsWith("BID_UPDATE") || response.startsWith("PRICE_ADJUSTMENT")) {
+                        System.out.println("Broadcast: " + response);
+                    } else {
+                        System.out.println("Skipping unrelated message: " + response);
+                    }
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

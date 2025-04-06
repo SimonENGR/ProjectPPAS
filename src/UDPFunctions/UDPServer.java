@@ -141,7 +141,7 @@ public class UDPServer {
 
                 List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem("src/resources/subscriptions.txt", item.getItemName());
 
-                String message = String.format("AUCTION_UPDATE %d,%s,%s,%.2f,%d",
+                String message = String.format("AUCTION_UPDATE RQ#%d,Item: %s,Desc: %s,Price: %.2f,TimeLeft(min): %d",
                         updatedItem.getRequestNumber(),
                         updatedItem.getItemName(),
                         updatedItem.getDescription(),
@@ -155,6 +155,16 @@ public class UDPServer {
                         NetworkUtils.sendMessageToClient(ds, address, buyer.getUdpPort(), message);
                     } catch (UnknownHostException e) {
                         System.err.println("Error: Unable to resolve IP for " + buyer.getUniqueName());
+                    }
+                }
+                RegistrationInfo seller = FileUtils.getUserByName(FILE_PATH, updatedItem.getSellerName());
+                if (seller != null) {
+                    try {
+                        InetAddress sellerAddress = InetAddress.getByName(seller.getIpAddress());
+                        NetworkUtils.sendMessageToClient(ds, sellerAddress, seller.getUdpPort(), message);
+                        System.out.println("Sent AUCTION_UPDATE to seller: " + seller.getUniqueName());
+                    } catch (Exception e) {
+                        System.err.println("Error sending auction update to seller: " + e.getMessage());
                     }
                 }
             } catch (InterruptedException e) {
@@ -210,7 +220,13 @@ public class UDPServer {
             confirmationMessage = "Register-denied RQ#" + requestNumber + " Reason: Duplicate name";
             success = false;
         } else {
-            String entry = regInfo.getUniqueName() + "," + regInfo.getRole() + ",RQ#" + requestNumber;
+            String entry = String.format("%s,%s,%s,%d,%d,RQ#%d",
+                    regInfo.getUniqueName(),
+                    regInfo.getRole(),
+                    dpReceive.getAddress().getHostAddress(),
+                    dpReceive.getPort(),
+                    regInfo.getTcpPort(),
+                    requestNumber);
             if (FileUtils.appendLineToFile(FILE_PATH, entry)) {
                 System.out.println("Account registered: " + entry);
                 confirmationMessage = "Registered,RQ#" + requestNumber;

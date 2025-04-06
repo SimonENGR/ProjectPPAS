@@ -328,18 +328,20 @@ public class FileUtils {
             String line;
             while ((line = reader.readLine()) != null) {
                 String[] tokens = line.split(",");
-                if (tokens.length >= 3 && tokens[0].trim().equalsIgnoreCase(name)) {
+                if (tokens.length >= 6 && tokens[0].trim().equalsIgnoreCase(name)) {
                     String role = tokens[1].trim();
-                    String rqTag = tokens[2].trim();
-                    int udpPort = Integer.parseInt(rqTag.split("#")[1]); // crude way
-                    return new RegistrationInfo(name, role, "127.0.0.1", udpPort, 0);
+                    String ip = tokens[2].trim();
+                    int udpPort = Integer.parseInt(tokens[3].trim());
+                    int tcpPort = Integer.parseInt(tokens[4].trim());
+                    return new RegistrationInfo(name, role, ip, udpPort, tcpPort);
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | NumberFormatException e) {
             System.err.println("Error reading user file: " + e.getMessage());
         }
         return null;
     }
+
 
     public static boolean updateAuctionLine(String filePath, String itemName, String updatedLine) {
         File inputFile = new File(filePath);

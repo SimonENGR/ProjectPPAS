@@ -266,7 +266,6 @@ public class UDPServer {
             }
         }
 
-
         String auctionLine = FileUtils.getAuctionLine("src/resources/activeAuctions.txt", item.getItemName());
         if (auctionLine == null) return; // item removed
 

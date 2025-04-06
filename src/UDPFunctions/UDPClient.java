@@ -1,20 +1,88 @@
 package UDPFunctions;
 
 import java.io.IOException;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
+import java.net.*;
 import java.util.Scanner;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 public class UDPClient {
-    public static void main(String[] args) throws IOException {
-        Scanner sc = new Scanner(System.in);
-        DatagramSocket ds = new DatagramSocket();
-        InetAddress serverIP = InetAddress.getLocalHost();
+    private DatagramSocket socket;
+    private InetAddress serverAddress;
+    private int serverPort;
+    private BlockingQueue<String> responseQueue = new LinkedBlockingQueue<>();
+    private Scanner sc = new Scanner(System.in);
+    private String uniqueName = "", role = "";
 
-        boolean registered = false;
-        String role = "", uniqueName = "", udpPort = "", tcpPort = "";
+    public UDPClient(InetAddress serverAddress, int serverPort) throws SocketException {
+        this.socket = new DatagramSocket();
+        this.socket.setSoTimeout(60000);
+        this.serverAddress = serverAddress;
+        this.serverPort = serverPort;
+
+        new Thread(this::listenForResponses).start();
+    }
+
+    private void listenForResponses() {
+        byte[] buffer = new byte[65535];
+        DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+
+        while (true) {
+            try {
+                socket.receive(packet);
+                String message = new String(packet.getData(), 0, packet.getLength()).trim();
+                responseQueue.offer(message);
+            } catch (IOException e) {
+                // Ignore timeout errors here
+            }
+        }
+    }
+
+    private void sendAndReceive(String message) throws IOException {
+        byte[] buf = message.getBytes();
+        socket.send(new DatagramPacket(buf, buf.length, serverAddress, serverPort));
+
+        String rqTag = extractRequestNumber(message);
+        long startTime = System.currentTimeMillis();
+
+        while (true) {
+            try {
+                String response = responseQueue.poll();
+                if (response == null) {
+                    if (System.currentTimeMillis() - startTime > 5000) {
+                        System.err.println("Timed out waiting for response.");
+                        return;
+                    }
+                    Thread.sleep(100);
+                    continue;
+                }
+                if (rqTag.isEmpty() || response.contains(rqTag)) {
+                    System.out.println("Server Response: " + response);
+                    return;
+                } else {
+                    System.out.println("Skipping unrelated message: " + response);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                System.err.println("Interrupted while waiting for response.");
+                return;
+            }
+        }
+    }
+
+    private String extractRequestNumber(String message) {
+        String[] tokens = message.split(",");
+        for (String token : tokens) {
+            if (token.matches("\\d{3,5}")) {
+                return "RQ#" + token;
+            }
+        }
+        return "";
+    }
+
+    public void run() throws IOException {
         String clientIP = InetAddress.getLocalHost().getHostAddress();
+        boolean registered = false;
 
         while (!registered) {
             System.out.println("\n=== Welcome to the Auction System ===");
@@ -25,33 +93,63 @@ public class UDPClient {
 
             switch (sc.nextLine().trim()) {
                 case "1":
-                    System.out.print("Enter your unique name: ");
-                    uniqueName = sc.nextLine().trim();
+                    while (!registered) {
+                        System.out.print("Enter your unique name: ");
+                        uniqueName = sc.nextLine().trim();
 
-                    System.out.print("Enter your role (buyer/seller): ");
-                    role = sc.nextLine().trim().toLowerCase();
+                        System.out.print("Enter your role (buyer/seller): ");
+                        role = sc.nextLine().trim().toLowerCase();
 
-                    System.out.print("Enter your UDP port: ");
-                    udpPort = sc.nextLine().trim();
+                        System.out.print("Enter your UDP port: ");
+                        String udpPort = sc.nextLine().trim();
 
-                    System.out.print("Enter your TCP port: ");
-                    tcpPort = sc.nextLine().trim();
+                        System.out.print("Enter your TCP port: ");
+                        String tcpPort = sc.nextLine().trim();
 
-                    String regMessage = String.format("register,%s,%s,%s,%s,%s", uniqueName, role, clientIP, udpPort, tcpPort);
-                    sendAndReceive(ds, serverIP, regMessage);
+                        String regMessage = String.format("register,%s,%s,%s,%s,%s", uniqueName, role, clientIP, udpPort, tcpPort);
 
-                    registered = true;
+                        // Capture the response string and only proceed if registration is accepted
+                        byte[] buf = regMessage.getBytes();
+                        socket.send(new DatagramPacket(buf, buf.length, serverAddress, serverPort));
+
+                        String rqTag = extractRequestNumber(regMessage);
+                        long startTime = System.currentTimeMillis();
+                        String response = null;
+
+                        while (System.currentTimeMillis() - startTime < 5000 && response == null) {
+                            try {
+                                String msg = responseQueue.poll();
+                                if (msg != null && (rqTag.isEmpty() || msg.contains(rqTag))) {
+                                    response = msg;
+                                    System.out.println("Server Response: " + response);
+                                } else if (msg != null) {
+                                    System.out.println("Skipping unrelated message: " + msg);
+                                } else {
+                                    Thread.sleep(100);
+                                }
+                            } catch (InterruptedException e) {
+                                System.err.println("Interrupted while waiting for registration response.");
+                                return;
+                            }
+                        }
+
+                        if (response != null && response.toLowerCase().contains("registered")) {
+                            registered = true;
+                        } else {
+                            System.out.println("❌ Registration failed (duplicate name or capacity). Try again.");
+                        }
+                    }
                     break;
 
                 case "2":
                     System.out.print("Enter the unique name to deregister: ");
                     String deregMsg = "deregister," + sc.nextLine().trim();
-                    sendAndReceive(ds, serverIP, deregMsg);
+                    sendAndReceive(deregMsg);
                     break;
 
                 case "3":
                     System.out.println("Exiting client...");
-                    ds.close();
+                    socket.close();
                     sc.close();
                     return;
 
@@ -60,44 +158,56 @@ public class UDPClient {
             }
         }
 
-        // === POST-REGISTRATION LOGIC ===
         if (role.equals("seller")) {
-            handleSellerActions(sc, ds, serverIP);
+            handleSellerActions();
         } else if (role.equals("buyer")) {
-            handleBuyerActions(sc, ds, serverIP, uniqueName);
+            handleBuyerActions();
         }
-
-        System.out.println("Client exiting...");
-        ds.close();
-        sc.close();
     }
 
-    private static void handleSellerActions(Scanner sc, DatagramSocket ds, InetAddress serverIP) throws IOException {
-        System.out.println("\n=== Item Listing (Seller) ===");
+    private void handleSellerActions() throws IOException {
+        System.out.println("\n=== Seller Menu ===");
         while (true) {
-            System.out.print("Enter item name (or type 'exit' to stop listing items): ");
-            String itemName = sc.nextLine().trim();
-            if (itemName.equalsIgnoreCase("exit")) break;
+            System.out.println("\n--- Seller Actions ---");
+            System.out.println("1. List an item");
+            System.out.println("2. Listen for auction updates");
+            System.out.println("3. Exit");
+            System.out.print("Select option: ");
 
-            System.out.print("Enter item description: ");
-            String description = sc.nextLine().trim();
+            String choice = sc.nextLine().trim();
+            switch (choice) {
+                case "1":
+                    System.out.print("Enter item name: ");
+                    String itemName = sc.nextLine().trim();
+                    System.out.print("Enter item description: ");
+                    String description = sc.nextLine().trim();
+                    System.out.print("Enter starting price: ");
+                    String startingPrice = sc.nextLine().trim();
+                    System.out.print("Enter duration (minutes): ");
+                    String duration = sc.nextLine().trim();
+                    String msg = String.format("list_item,%s,%s,%s,%s,%s", itemName, description, startingPrice, duration, uniqueName);
+                    sendAndReceive(msg);
+                    break;
 
-            System.out.print("Enter starting price (whole number only): ");
-            String startingPrice = sc.nextLine().trim();
+                case "2":
+                    listenForAnnouncements(); // Same method used by buyer
+                    break;
 
-            System.out.print("Enter duration (in minutes): ");
-            String duration = sc.nextLine().trim();
+                case "3":
+                    System.out.println("Exiting seller menu...");
+                    return;
 
-            String listItemMessage = String.format("list_item,%s,%s,%s,%s", itemName, description, startingPrice, duration);
-            sendAndReceive(ds, serverIP, listItemMessage);
+                default:
+                    System.out.println("Invalid option. Please select 1, 2, or 3.");
+            }
         }
     }
 
-    private static void handleBuyerActions(Scanner sc, DatagramSocket ds, InetAddress serverIP, String uniqueName) throws IOException {
+    private void handleBuyerActions() throws IOException {
         System.out.println("\n=== Buyer Options ===");
-        System.out.print("Do you want to see the item listings? (yes/no): ");
+        System.out.print("Do you want to see item listings? (yes/no): ");
         if (sc.nextLine().trim().equalsIgnoreCase("yes")) {
-            sendAndReceive(ds, serverIP, "get_all_items");
+            sendAndReceive("get_all_items");
         }
 
         while (true) {
@@ -111,32 +221,30 @@ public class UDPClient {
 
             switch (sc.nextLine().trim()) {
                 case "1":
-                    System.out.print("Enter Item Name to subscribe to: ");
+                    System.out.print("Enter item name to subscribe: ");
                     String subItem = sc.nextLine().trim();
-                    String subscribeMsg = String.format("subscribe,%d,%s,%s", (int) (Math.random() * 10000), subItem, uniqueName);
-                    sendAndReceive(ds, serverIP, subscribeMsg);
+                    String subscribeMsg = String.format("subscribe,%d,%s,%s", (int)(Math.random() * 10000), subItem, uniqueName);
+                    sendAndReceive(subscribeMsg);
                     break;
 
                 case "2":
-                    System.out.print("Enter Item Name to unsubscribe from: ");
+                    System.out.print("Enter item name to unsubscribe: ");
                     String unsubItem = sc.nextLine().trim();
-                    String unsubMsg = String.format("de-subscribe,%d,%s,%s", (int) (Math.random() * 10000), unsubItem, uniqueName);
-                    sendAndReceive(ds, serverIP, unsubMsg);
+                    String unsubMsg = String.format("de-subscribe,%d,%s,%s", (int)(Math.random() * 10000), unsubItem, uniqueName);
+                    sendAndReceive(unsubMsg);
                     break;
 
                 case "3":
-                    listenForAnnouncements(ds, sc);
+                    listenForAnnouncements();
                     break;
 
                 case "4":
-                    System.out.print("Enter the item name to bid on: ");
+                    System.out.print("Enter item name to bid on: ");
                     String bidItem = sc.nextLine().trim();
                     System.out.print("Enter your bid amount: ");
                     String bidAmount = sc.nextLine().trim();
-
-                    String bidMessage = String.format("bid,%s,%s,%s", bidItem, uniqueName, bidAmount);
-                    System.out.println("Sending bid request: " + bidMessage);
-                    sendAndReceive(ds, serverIP, bidMessage);
+                    String bidMsg = String.format("bid,%s,%s,%s", bidItem, uniqueName, bidAmount);
+                    sendAndReceive(bidMsg);
                     break;
 
                 case "5":
@@ -144,49 +252,32 @@ public class UDPClient {
                     return;
 
                 default:
-                    System.out.println("Invalid option. Please select a number between 1 and 5.");
+                    System.out.println("Invalid option.");
             }
         }
     }
 
-    private static void sendAndReceive(DatagramSocket ds, InetAddress serverIP, String message) throws IOException {
-        byte[] buf = message.getBytes();
-        ds.send(new DatagramPacket(buf, buf.length, serverIP, 420));
-
-        byte[] responseBuffer = new byte[65535];
-        DatagramPacket responsePacket = new DatagramPacket(responseBuffer, responseBuffer.length);
-
-        // Set a timeout to prevent freezing indefinitely
-        ds.setSoTimeout(5000); // 5 seconds timeout
-
-        try {
-            ds.receive(responsePacket);
-            String response = new String(responsePacket.getData(), 0, responsePacket.getLength());
-            System.out.println("Server Response: " + response);
-        } catch (java.net.SocketTimeoutException e) {
-            System.err.println("Error: No response from server. Check server status.");
-        }
-    }
-
-    private static void listenForAnnouncements(DatagramSocket ds, Scanner sc) {
+    private void listenForAnnouncements() {
         System.out.println("Listening for auction announcements (press Enter to stop)...");
         Thread listener = new Thread(() -> {
-            while (true) {
+            while (!Thread.currentThread().isInterrupted()) {
                 try {
-                    byte[] buffer = new byte[65535];
-                    DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-                    ds.receive(packet);
-                    String msg = new String(packet.getData(), 0, packet.getLength());
-                    if (msg.equalsIgnoreCase("bye")) break;
-                    System.out.println("Broadcast: " + msg);
-                } catch (IOException e) {
-                    System.err.println("Listener error: " + e.getMessage());
+                    String message = responseQueue.take();
+                    System.out.println("Broadcast: " + message);
+                } catch (InterruptedException e) {
                     break;
                 }
             }
         });
         listener.setDaemon(true);
         listener.start();
-        sc.nextLine(); // Wait for Enter to stop listening
+        sc.nextLine(); // Wait for user to press Enter
+        listener.interrupt();
+    }
+
+    public static void main(String[] args) throws IOException {
+        InetAddress serverIP = InetAddress.getLocalHost();
+        UDPClient client = new UDPClient(serverIP, 420);
+        client.run();
     }
 }

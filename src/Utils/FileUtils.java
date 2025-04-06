@@ -323,6 +323,24 @@ public class FileUtils {
         return null;
     }
 
+    public static RegistrationInfo getUserByName(String filePath, String name) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] tokens = line.split(",");
+                if (tokens.length >= 3 && tokens[0].trim().equalsIgnoreCase(name)) {
+                    String role = tokens[1].trim();
+                    String rqTag = tokens[2].trim();
+                    int udpPort = Integer.parseInt(rqTag.split("#")[1]); // crude way
+                    return new RegistrationInfo(name, role, "127.0.0.1", udpPort, 0);
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error reading user file: " + e.getMessage());
+        }
+        return null;
+    }
+
     public static boolean updateAuctionLine(String filePath, String itemName, String updatedLine) {
         File inputFile = new File(filePath);
         File tempFile = new File(filePath + ".tmp");
@@ -358,9 +376,5 @@ public class FileUtils {
         }
         return updated;
     }
-
-
-
-
 
 }

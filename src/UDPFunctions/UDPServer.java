@@ -29,19 +29,22 @@ public class UDPServer {
     private static AtomicInteger requestCounter = new AtomicInteger(FileUtils.readLastRequestNumber("src/resources/last_rq.txt") + 1);
     private static ReentrantLock auctionLock = new ReentrantLock();
 
-    public void placeBid(String message, int requestNumber, DatagramSocket ds, InetAddress clientIP, int clientPort) {
+    public void placeBid(String message, DatagramSocket ds, InetAddress clientIP, int clientPort) {
         String[] tokens = message.split(",");
         if (tokens.length != 4) {
-            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + requestNumber + " Reason: Invalid format");
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#UNKNOWN Reason: Invalid format");
             return;
         }
+
+        String rqNum = tokens[0].trim();  // Client's RQ#
         String itemName = tokens[1].trim();
         String bidderName = tokens[2].trim();
         double bidAmount;
+
         try {
             bidAmount = Double.parseDouble(tokens[3].trim());
         } catch (NumberFormatException e) {
-            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + requestNumber + " Reason: Invalid bid amount");
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + rqNum + " Reason: Invalid bid amount");
             return;
         }
 
@@ -50,39 +53,76 @@ public class UDPServer {
             String auctionLine = FileUtils.getAuctionLine(ACTIVE_AUCTIONS_FILE, itemName);
             if (auctionLine == null) {
                 System.out.println("DEBUG: Received bid for item '" + itemName + "', but auction not found.");
-                NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + requestNumber + " Reason: Item not found");
+                NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + rqNum + " Reason: Item not found");
                 return;
             }
-            // Expected auction line format:
-            // itemName,description,startingPrice,currentBid,duration,RQ#...
+
             String[] auctionTokens = auctionLine.split(",");
-            if (auctionTokens.length < 6) {
+            if (auctionTokens.length != 9) {
                 System.err.println("DEBUG: Auction line for " + itemName + " is malformed.");
-                NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + requestNumber + " Reason: Auction data corrupted");
+                NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + rqNum + " Reason: Auction data corrupted");
                 return;
             }
+
             double currentBid = Double.parseDouble(auctionTokens[3].trim());
-            // (Optional: add auction expiration check here if you decide to store timing info.)
             if (bidAmount <= currentBid) {
-                NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + requestNumber + " Reason: Bid too low");
+                NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + rqNum + " Reason: Bid too low");
                 return;
             }
-            // Create updated auction line (update current bid)
-            String updatedAuctionLine = String.format("%s,%s,%s,%.2f,%s,%s",
+
+            String updatedAuctionLine = String.format("%s,%s,%s,%.2f,%.2f,%s,%s,%s,RQ#%s",
                     auctionTokens[0].trim(),
                     auctionTokens[1].trim(),
                     auctionTokens[2].trim(),
+                    Double.parseDouble(auctionTokens[3].trim()),
                     bidAmount,
-                    auctionTokens[4].trim(),
-                    auctionTokens[5].trim());
+                    bidderName,
+                    auctionTokens[6].trim(),
+                    auctionTokens[7].trim(),
+                    auctionTokens[8].trim().replace("RQ#", "")
+            );
+
             if (FileUtils.updateAuctionLine(ACTIVE_AUCTIONS_FILE, itemName, updatedAuctionLine)) {
-                NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-ACCEPTED RQ#" + requestNumber);
-                broadcastAuctionAnnouncement(updatedAuctionLine, ds);
+                NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-ACCEPTED RQ#" + rqNum);
+                ItemRegistry updatedItem = ItemRegistry.fromCSV(updatedAuctionLine);
+                broadcastBidUpdate(updatedItem, ds);
+
             } else {
-                NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + requestNumber + " Reason: File update error");
+                NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + rqNum + " Reason: File update error");
             }
         } finally {
             auctionLock.unlock();
+        }
+    }
+
+    public void broadcastBidUpdate(ItemRegistry item, DatagramSocket ds) {
+        String message = String.format("BID_UPDATE,RQ#%d,%s,%.2f,%s,%d",
+                item.getRequestNumber(),
+                item.getItemName(),
+                item.getCurrentPrice(),
+                item.getHighestBidder(),
+                item.getTimeRemaining() / 60000);
+
+        List<RegistrationInfo> subscribers = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, item.getItemName());
+
+        for (RegistrationInfo buyer : subscribers) {
+            try {
+                InetAddress address = InetAddress.getByName(buyer.getIpAddress());
+                NetworkUtils.sendMessageToClient(ds, address, buyer.getUdpPort(), message);
+            } catch (Exception e) {
+                System.err.println("Error sending BID_UPDATE to " + buyer.getUniqueName());
+            }
+        }
+
+        // Optional: Notify seller too (you’d need to store who the seller is during list_item)
+        RegistrationInfo seller = FileUtils.getUserByName(FILE_PATH, item.getSellerName());
+        if (seller != null) {
+            try {
+                InetAddress sellerAddress = InetAddress.getByName(seller.getIpAddress());
+                NetworkUtils.sendMessageToClient(ds, sellerAddress, seller.getUdpPort(), message);
+            } catch (Exception e) {
+                System.err.println("Error sending BID_UPDATE to seller " + seller.getUniqueName());
+            }
         }
     }
 
@@ -91,25 +131,30 @@ public class UDPServer {
 
         while (System.currentTimeMillis() < auctionEndTime) {
             try {
-                Thread.sleep(30_000);  // Sleep for 30 seconds before sending another update
+                Thread.sleep(30_000);  // Sleep 30s before sending update
 
-                List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, item.getItemName());
+                String auctionLine = FileUtils.getAuctionLine("src/resources/activeAuctions.txt", item.getItemName());
+                if (auctionLine == null) return; // item removed
 
-                String message = String.format("AUCTION_UPDATE %s %s %s %.2f %d",
-                        item.getRequestNumber(),                   // RQ#
-                        item.getItemName(),
-                        item.getDescription(),
-                        item.getCurrentPrice(),                   // This should be updated with current highest bid
-                        item.getTimeRemaining() / 60000  // Time left in minutes
+                // ✅ Create updated item object
+                ItemRegistry updatedItem = ItemRegistry.fromCSV(auctionLine);
+
+                List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem("src/resources/subscriptions.txt", item.getItemName());
+
+                String message = String.format("AUCTION_UPDATE %d,%s,%s,%.2f,%d",
+                        updatedItem.getRequestNumber(),
+                        updatedItem.getItemName(),
+                        updatedItem.getDescription(),
+                        updatedItem.getCurrentPrice(),  // ✅ now reflects updated price
+                        updatedItem.getTimeRemaining() / 60000
                 );
 
-                // Send updates to all subscribed buyers
                 for (RegistrationInfo buyer : subscribedBuyers) {
                     try {
                         InetAddress address = InetAddress.getByName(buyer.getIpAddress());
                         NetworkUtils.sendMessageToClient(ds, address, buyer.getUdpPort(), message);
                     } catch (UnknownHostException e) {
-                        System.err.println("Error: Unable to resolve IP address for buyer " + buyer.getUniqueName() + ": " + buyer.getIpAddress());
+                        System.err.println("Error: Unable to resolve IP for " + buyer.getUniqueName());
                     }
                 }
             } catch (InterruptedException e) {
@@ -117,9 +162,9 @@ public class UDPServer {
             }
         }
 
-        // Once auction ends, notify buyers and remove item
         endAuction(item, ds);
     }
+
 
     public void endAuction(ItemRegistry item, DatagramSocket ds) {
         List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, item.getItemName());
@@ -192,7 +237,7 @@ public class UDPServer {
 
     public void listItem(String message, int requestNumber, DatagramSocket ds, InetAddress clientIP, int clientPort) {
         String[] tokens = message.split(",");
-        if (tokens.length != 5) {
+        if (tokens.length != 6) {
             NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "LIST-DENIED RQ#" + requestNumber + " Reason: Invalid format");
             return;
         }
@@ -221,9 +266,11 @@ public class UDPServer {
             return;
         }
 
+        String sellerName = tokens[5].trim();
+
         // Create new auction item. Its toCSV() should return a CSV line:
         // itemName,description,startingPrice,currentBid,duration,RQ#requestNumber
-        ItemRegistry newItem = new ItemRegistry(itemName, description, startingPrice, duration, requestNumber);
+        ItemRegistry newItem = new ItemRegistry(itemName, description, startingPrice, duration, requestNumber, sellerName);
 
         // Write the new auction to the file under lock.
         auctionLock.lock();
@@ -241,52 +288,62 @@ public class UDPServer {
         }
     }
 
-    public void handleSubscribe(String message, int requestNumber, DatagramSocket ds, InetAddress clientIP, int clientPort) {
+    public void handleSubscribe(String message, DatagramSocket ds, InetAddress clientIP, int clientPort) {
         String[] tokens = message.split(",", 4);
         if (tokens.length != 4) {
-            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "SUBSCRIPTION-DENIED RQ#" + requestNumber + " Reason: Invalid format");
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "SUBSCRIPTION-DENIED RQ#UNKNOWN Reason: Invalid format");
             return;
         }
 
         String rqNum = tokens[1].trim();
         String itemName = tokens[2].trim();
         String buyerName = tokens[3].trim();
+
+        // 🔐 Check if item exists in active auctions
+        if (FileUtils.getAuctionLine("src/resources/activeAuctions.txt", itemName) == null) {
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "SUBSCRIPTION-DENIED RQ#" + rqNum + " Reason: Item not found");
+            return;
+        }
 
         RegistrationInfo buyer = new RegistrationInfo(buyerName, "buyer", clientIP.getHostAddress(), clientPort, 0);
 
-        if (FileUtils.isAlreadySubscribed(SUBSCRIPTION_FILE, itemName, buyer)) {
-            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "SUBSCRIPTION-DENIED " + rqNum + " Reason: Already subscribed");
+        if (FileUtils.isAlreadySubscribed("src/resources/subscriptions.txt", itemName, buyer)) {
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "SUBSCRIPTION-DENIED RQ#" + rqNum + " Reason: Already subscribed");
             return;
         }
 
-        boolean written = FileUtils.addSubscription(SUBSCRIPTION_FILE, itemName, buyer);
+        boolean written = FileUtils.addSubscription("src/resources/subscriptions.txt", itemName, buyer);
         if (written) {
-            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "SUBSCRIBED " + rqNum);
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "SUBSCRIBED RQ#" + rqNum);
         } else {
-            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "SUBSCRIPTION-DENIED " + rqNum + " Reason: Internal server error");
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "SUBSCRIPTION-DENIED RQ#" + rqNum + " Reason: Internal server error");
         }
     }
 
-    public void handleDeSubscribe(String message, int requestNumber, DatagramSocket ds, InetAddress clientIP, int clientPort) {
+
+
+    public void handleDeSubscribe(String message, DatagramSocket ds, InetAddress clientIP, int clientPort) {
         String[] tokens = message.split(",", 4);
         if (tokens.length != 4) {
-            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "UNSUBSCRIBE-DENIED RQ#" + requestNumber + " Reason: Invalid format");
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "UNSUBSCRIBE-DENIED RQ#UNKNOWN Reason: Invalid format");
             return;
         }
 
         String rqNum = tokens[1].trim();
         String itemName = tokens[2].trim();
         String buyerName = tokens[3].trim();
+
         RegistrationInfo buyer = new RegistrationInfo(buyerName, "buyer", clientIP.getHostAddress(), clientPort, 0);
 
         boolean removed = FileUtils.removeSubscription("src/resources/subscriptions.txt", itemName, buyer);
 
         if (removed) {
-            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "UNSUBSCRIBED " + rqNum);
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "UNSUBSCRIBED RQ#" + rqNum);
         } else {
-            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "UNSUBSCRIBE-DENIED " + rqNum + " Reason: Subscription not found");
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "UNSUBSCRIBE-DENIED RQ#" + rqNum + " Reason: Subscription not found");
         }
     }
+
 
     public void broadcastAuctionAnnouncement(String auctionCSV, DatagramSocket ds) {
         // Parse the auction CSV. Expected order:
@@ -382,15 +439,15 @@ public class UDPServer {
                         break;
 
                     case "subscribe":
-                        server.handleSubscribe(msg, requestNumber, ds, clientAddress, clientPort);
+                        server.handleSubscribe(msg, ds, clientAddress, clientPort);
                         break;
 
                     case "de-subscribe":
-                        server.handleDeSubscribe(msg, requestNumber, ds, clientAddress, clientPort);
+                        server.handleDeSubscribe(msg, ds, clientAddress, clientPort);
                         break;
 
                     case "bid":
-                        server.placeBid(msg, requestNumber, ds, clientAddress, clientPort);
+                        server.placeBid(msg, ds, clientAddress, clientPort);
                         break;
 
                     default:

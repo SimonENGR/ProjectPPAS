@@ -542,10 +542,10 @@ public class UDPServer {
         }
     }
 
-    public static void main(String[] args) throws IOException {
-        DatagramSocket ds = new DatagramSocket(420);
+    public void start(int port) throws IOException {
+        DatagramSocket ds = new DatagramSocket(port);
         UDPServer server = new UDPServer();
-        System.out.println("Server listening on port 420...");
+        System.out.println("Server listening on port: " + port);
 
         ExecutorService pool = Executors.newFixedThreadPool(10);
 

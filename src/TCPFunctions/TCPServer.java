@@ -17,24 +17,28 @@ public class TCPServer {
             this.server = new ServerSocket(port, 1, InetAddress.getLocalHost());
     }
 
+    public void start() throws Exception {
+        System.out.println("\nRunning TCP Server: Host=" + getSocketAddress().getHostAddress() + " Port=" + getPort());
+        listen();
+    }
+
     public void listen() throws Exception {
-        System.out.println("\r\nWaiting for client connections...");
+        System.out.println("Waiting for TCP client connections...");
 
         while (true) {
             try (Socket client = this.server.accept();
                  BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));
-                 PrintWriter out = new PrintWriter(client.getOutputStream(), true)) { // Writer to send data back
+                 PrintWriter out = new PrintWriter(client.getOutputStream(), true)) {
 
                 String clientAddress = client.getInetAddress().getHostAddress();
-                System.out.println("\r\nNew connection from " + clientAddress);
+                System.out.println("New TCP connection from " + clientAddress);
 
                 String data;
                 while ((data = in.readLine()) != null) {
                     System.out.println("Message from " + clientAddress + ": " + data);
-
-                    // Send a response back to the client
                     out.println("Server received: " + data);
                 }
+
             } catch (Exception e) {
                 System.out.println("Error handling client: " + e.getMessage());
             }
@@ -49,9 +53,10 @@ public class TCPServer {
         return this.server.getLocalPort();
     }
 
+    // Optional main method for testing only
     public static void main(String[] args) throws Exception {
-        int port = 443; // Default port
-        String ipAddress = "127.0.0.1"; // Default IP (localhost)
+        int port = 443;
+        String ipAddress = "127.0.0.1";
 
         if (args.length > 0) {
             ipAddress = args[0];
@@ -61,8 +66,6 @@ public class TCPServer {
         }
 
         TCPServer app = new TCPServer(ipAddress, port);
-        System.out.println("\r\nRunning TCP Server: Host=" + app.getSocketAddress().getHostAddress() + " Port=" + app.getPort());
-
-        app.listen();
+        app.start();
     }
 }

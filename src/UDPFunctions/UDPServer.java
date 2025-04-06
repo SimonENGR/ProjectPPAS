@@ -266,7 +266,14 @@ public class UDPServer {
             }
         }
 
-        endAuction(item, ds);
+
+        String auctionLine = FileUtils.getAuctionLine("src/resources/activeAuctions.txt", item.getItemName());
+        if (auctionLine == null) return; // item removed
+
+        // ✅ Create updated item object FIRST
+        ItemRegistry updatedItem = ItemRegistry.fromCSV(auctionLine);
+
+        endAuction(updatedItem, ds);
     }
 
     public void endAuction(ItemRegistry item, DatagramSocket ds) {

@@ -11,6 +11,7 @@ public class UDPClient {
     private InetAddress serverAddress;
     private int serverPort;
     private BlockingQueue<String> responseQueue = new LinkedBlockingQueue<>();
+    private BlockingQueue<String> negotiationQueue = new LinkedBlockingQueue<>(); // Add this to the class fields
     private Scanner sc = new Scanner(System.in);
     private String uniqueName = "", role = "";
 
@@ -31,9 +32,22 @@ public class UDPClient {
             try {
                 socket.receive(packet);
                 String message = new String(packet.getData(), 0, packet.getLength()).trim();
-                responseQueue.offer(message);
+
+                // Handle broadcasts
+                if (message.startsWith("AUCTION_UPDATE") ||
+                        message.startsWith("BID_UPDATE") ||
+                        message.startsWith("PRICE_ADJUSTMENT")) {
+
+                    System.out.println("Broadcast: " + message);
+
+                } else if (message.startsWith("NEGOTIATE_REQ")) {
+                    System.out.println("Broadcast: " + message);
+                    negotiationQueue.offer(message); // Store it for option 3
+                } else {
+                    responseQueue.offer(message); // All other messages handled by main flow
+                }
             } catch (IOException e) {
-                // Ignore timeout errors here
+                // Timeout or other expected errors
             }
         }
     }
@@ -176,8 +190,8 @@ public class UDPClient {
             System.out.println("\n--- Seller Actions ---");
             System.out.println("1. List an item");
             System.out.println("2. Listen for auction updates");
-            System.out.println("3. Exit");
-            System.out.print("Select option: ");
+            System.out.println("3. Handle negotiation requests"); // <== this line
+            System.out.println("4. Exit");
 
             String choice = sc.nextLine().trim();
             switch (choice) {
@@ -199,11 +213,67 @@ public class UDPClient {
                     break;
 
                 case "3":
+                    handlePendingNegotiations();
+                    break;
+
+                case "4":
                     System.out.println("Exiting seller menu...");
                     return;
 
                 default:
                     System.out.println("Invalid option. Please select 1, 2, or 3.");
+            }
+        }
+    }
+
+    private void handlePendingNegotiations() {
+        if (negotiationQueue.isEmpty()) {
+            System.out.println("📭 No pending negotiation requests.");
+            return;
+        }
+
+        while (!negotiationQueue.isEmpty()) {
+            String message = negotiationQueue.poll();
+            if (message == null) break;
+
+            // Parse: NEGOTIATE_REQ RQ#83 itemName price timeLeft
+            String[] tokens = message.split("\\s+");
+            if (tokens.length < 5) {
+                System.out.println("⚠️ Invalid negotiation request: " + message);
+                continue;
+            }
+
+            String rqNum = tokens[1];
+            String itemName = tokens[2];
+            String price = tokens[3];
+            String timeLeft = tokens[4];
+
+            System.out.println("\n📩 NEGOTIATION REQUEST RECEIVED");
+            System.out.printf("Item: %s | Current Price: %s | Time Left: %s minutes%n", itemName, price, timeLeft);
+            System.out.println("1. Accept and offer a new price");
+            System.out.println("2. Refuse");
+            System.out.print("Choose an option (1/2): ");
+
+            String decision = sc.nextLine().trim();
+            if (decision.equals("1")) {
+                System.out.print("Enter your new price: ");
+                String newPrice = sc.nextLine().trim();
+                String response = String.format("ACCEPT %s %s %s", rqNum, itemName, newPrice);
+
+                try {
+                    socket.send(new DatagramPacket(response.getBytes(), response.length(), serverAddress, serverPort));
+                } catch (IOException e) {
+                    System.err.println("❌ Failed to send ACCEPT message: " + e.getMessage());
+                }
+
+            } else {
+                String response = String.format("REFUSE %s %s REJECT", rqNum, itemName);
+
+                try {
+                    socket.send(new DatagramPacket(response.getBytes(), response.length(), serverAddress, serverPort));
+                } catch (IOException e) {
+                    System.err.println("❌ Failed to send REFUSE message: " + e.getMessage());
+                }
             }
         }
     }

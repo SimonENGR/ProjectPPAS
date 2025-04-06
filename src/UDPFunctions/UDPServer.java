@@ -154,10 +154,10 @@ public class UDPServer {
             }
 
             ItemRegistry item = ItemRegistry.fromCSV(auctionLine);
-            item.placeBid("None", newPrice); // Update price, reset bidder
+            item.adjustPrice(newPrice); // ✅ Update both startingPrice & currentPrice
             FileUtils.updateAuctionLine(ACTIVE_AUCTIONS_FILE, itemName, item.toCSV());
 
-            // Broadcast PRICE_ADJUSTMENT to subscribers
+            // ✅ Notify all subscribed buyers of new price
             List<RegistrationInfo> subs = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, itemName);
             String messageToSubs = String.format("PRICE_ADJUSTMENT RQ#%d %s %.2f %d",
                     item.getRequestNumber(), item.getItemName(), item.getCurrentPrice(), item.getTimeRemaining() / 60000);
@@ -170,24 +170,25 @@ public class UDPServer {
                 }
             }
 
-            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "ACCEPTED RQ#" + rqTag);
+            // ✅ Confirmation to seller
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "ACCEPTED " + rqTag);
         } finally {
             auctionLock.unlock();
         }
     }
 
+
     public void handleRefuseNegotiation(String message, DatagramSocket ds, InetAddress clientIP, int clientPort) {
         String[] tokens = message.split("\\s+");
-        if (tokens.length < 4) {
+        if (tokens.length < 3) {
             NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "REFUSE-DENIED Reason: Invalid format");
             return;
         }
 
         String rqTag = tokens[1].trim(); // RQ#
-        String itemName = tokens[2].trim();
-
-        NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "REFUSED RQ#" + rqTag);
+        NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "REFUSED " + rqTag);
     }
+
 
     public void startAuctionBroadcast(ItemRegistry item, DatagramSocket ds) {
         long auctionEndTime = System.currentTimeMillis() + item.getDuration();
@@ -504,7 +505,7 @@ public class UDPServer {
             int clientPort = dpReceive.getPort();
 
             pool.execute(() -> {
-                String msg = new String(data);
+                String msg = new String(data).trim();
                 System.out.println("Received message: " + msg);
 
                 if (MessageParser.isGetAllItemsRequest(msg)) {
@@ -518,11 +519,24 @@ public class UDPServer {
                     return;
                 }
 
+
+// Handle space-separated negotiation messages FIRST
+                String spaceAction = msg.split("\\s+")[0].trim().toLowerCase();
+                if (spaceAction.equals("accept")) {
+                    server.handleAcceptNegotiation(msg, ds, clientAddress, clientPort);
+                    return;
+                } else if (spaceAction.equals("refuse")) {
+                    server.handleRefuseNegotiation(msg, ds, clientAddress, clientPort);
+                    return;
+                }
+
+// ONLY THEN: comma-split regular protocol messages
                 String[] tokens = msg.split(",");
                 if (tokens.length < 2) {
                     System.err.println("DEBUG: Invalid message format.");
                     return;
                 }
+
 
                 String action = tokens[0].trim().toLowerCase();
                 int requestNumber = requestCounter.getAndIncrement();
@@ -559,14 +573,6 @@ public class UDPServer {
 
                     case "bid":
                         server.placeBid(msg, ds, clientAddress, clientPort);
-                        break;
-
-                    case "accept":
-                        server.handleAcceptNegotiation(msg, ds, clientAddress, clientPort);
-                        break;
-
-                    case "refuse":
-                        server.handleRefuseNegotiation(msg, ds, clientAddress, clientPort);
                         break;
 
                     default:

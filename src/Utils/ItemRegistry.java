@@ -86,6 +86,7 @@ public class ItemRegistry {
     }
 
     public void adjustPrice(double newPrice) {
+        this.startingPrice = newPrice;
         this.currentPrice = newPrice;
         this.highestBidder = "None";
     }

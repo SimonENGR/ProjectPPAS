@@ -19,7 +19,6 @@ public class AuctionServer {
                 System.err.println("UDP Server failed to start: " + e.getMessage());
             }
         });
-        udpThread.start();
 
         // Start TCP server
         Thread tcpThread = new Thread(() -> {

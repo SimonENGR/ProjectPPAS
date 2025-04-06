@@ -159,6 +159,7 @@ public class UDPClient {
                             registered = true;
 
                         } else {
+                            System.out.println(response);
                             System.out.println("❌ Registration failed (duplicate name or capacity). Try again.");
                         }
                     }
@@ -355,7 +356,7 @@ public class UDPClient {
     }
 
     public static void main(String[] args) throws IOException {
-        InetAddress serverIP = InetAddress.getLocalHost();
+        InetAddress serverIP = InetAddress.getByName("192.168.2.95");
         UDPClient client = new UDPClient(serverIP, 420);
         client.run();
     }

@@ -159,7 +159,7 @@ public class UDPClient {
                             registered = true;
 
                         } else {
-                            System.out.println(response);
+                            System.out.println("Message is: " + response);
                             System.out.println("❌ Registration failed (duplicate name or capacity). Try again.");
                         }
                     }

@@ -1,5 +1,7 @@
 package UDPFunctions;
 
+import TCPFunctions.TCPResponder;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -105,7 +107,7 @@ public class UDPClient {
     private void startTCPListener(int tcpPort) {
         new Thread(() -> {
             try (ServerSocket serverSocket = new ServerSocket(tcpPort)) {
-                System.out.println("📡 TCP listener started on port " + tcpPort);
+                System.out.println(" TCP listener started on port " + tcpPort);
 
                 while (true) {
                     try (Socket clientSocket = serverSocket.accept();
@@ -113,16 +115,16 @@ public class UDPClient {
 
                         String line;
                         while ((line = in.readLine()) != null) {
-                            System.out.println("\n📬 TCP Message Received: " + line);
+                            System.out.println("\n TCP Message Received: " + line);
                             System.out.print(">> "); // re-prompt
                         }
 
                     } catch (IOException e) {
-                        System.err.println("❌ Error in client TCP connection: " + e.getMessage());
+                        System.err.println(" Error in client TCP connection: " + e.getMessage());
                     }
                 }
             } catch (IOException e) {
-                System.err.println("❌ Failed to start TCP listener: " + e.getMessage());
+                System.err.println(" Failed to start TCP listener: " + e.getMessage());
             }
         }).start();
     }
@@ -182,11 +184,15 @@ public class UDPClient {
 
                         if (response != null && response.toLowerCase().startsWith("registered")) {
                             registered = true;
-                            startTCPListener(Integer.parseInt(tcpPort));
+
+                            // Use TCPResponder instead of startTCPListener
+                            // Pass the tcpPort entered during registration
+                            TCPResponder tcpResponder = new TCPResponder(Integer.parseInt(tcpPort));
+                            tcpResponder.start();  // Start TCPResponder to handle further TCP communication
 
                         } else {
                             System.out.println("Message is: " + response);
-                            System.out.println("❌ Registration failed (duplicate name or capacity). Try again.");
+                            System.out.println(" Registration failed (duplicate name or capacity). Try again.");
                         }
                     }
                     break;
@@ -259,7 +265,7 @@ public class UDPClient {
 
     private void handlePendingNegotiations() {
         if (negotiationQueue.isEmpty()) {
-            System.out.println("📭 No pending negotiation requests.");
+            System.out.println(" No pending negotiation requests.");
             return;
         }
 
@@ -270,7 +276,7 @@ public class UDPClient {
             // Parse: NEGOTIATE_REQ RQ#83 itemName price timeLeft
             String[] tokens = message.split("\\s+");
             if (tokens.length < 5) {
-                System.out.println("⚠️ Invalid negotiation request: " + message);
+                System.out.println(" Invalid negotiation request: " + message);
                 continue;
             }
 
@@ -279,7 +285,7 @@ public class UDPClient {
             String price = tokens[3];
             String timeLeft = tokens[4];
 
-            System.out.println("\n📩 NEGOTIATION REQUEST RECEIVED");
+            System.out.println("\n NEGOTIATION REQUEST RECEIVED");
             System.out.printf("Item: %s | Current Price: %s | Time Left: %s minutes%n", itemName, price, timeLeft);
             System.out.println("1. Accept and offer a new price");
             System.out.println("2. Refuse");
@@ -294,7 +300,7 @@ public class UDPClient {
                 try {
                     socket.send(new DatagramPacket(response.getBytes(), response.length(), serverAddress, serverPort));
                 } catch (IOException e) {
-                    System.err.println("❌ Failed to send ACCEPT message: " + e.getMessage());
+                    System.err.println(" Failed to send ACCEPT message: " + e.getMessage());
                 }
 
             } else {
@@ -303,7 +309,7 @@ public class UDPClient {
                 try {
                     socket.send(new DatagramPacket(response.getBytes(), response.length(), serverAddress, serverPort));
                 } catch (IOException e) {
-                    System.err.println("❌ Failed to send REFUSE message: " + e.getMessage());
+                    System.err.println(" Failed to send REFUSE message: " + e.getMessage());
                 }
             }
         }
@@ -383,7 +389,11 @@ public class UDPClient {
 
     public static void main(String[] args) throws IOException {
         InetAddress serverIP = InetAddress.getLocalHost();
-        UDPClient client = new UDPClient(serverIP, 420);
+
+        int udpPort = 420; // This should match the server's UDP port
+
+        // Start the UDP client
+        UDPClient client = new UDPClient(serverIP, udpPort);
         client.run();
     }
 }

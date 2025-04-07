@@ -56,7 +56,7 @@ public class TCPServer {
     // Optional main method for testing only
     public static void main(String[] args) throws Exception {
         int port = 443;
-        String ipAddress = "127.0.0.1";
+        String ipAddress = "192.168.2.95";
 
         if (args.length > 0) {
             ipAddress = args[0];

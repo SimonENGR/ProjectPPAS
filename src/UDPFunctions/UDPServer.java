@@ -155,10 +155,10 @@ public class UDPServer {
             }
 
             ItemRegistry item = ItemRegistry.fromCSV(auctionLine);
-            item.adjustPrice(newPrice); // ✅ Update both startingPrice & currentPrice
+            item.adjustPrice(newPrice); // Update both startingPrice & currentPrice
             FileUtils.updateAuctionLine(ACTIVE_AUCTIONS_FILE, itemName, item.toCSV());
 
-            // ✅ Notify all subscribed buyers of new price
+            // Notify all subscribed buyers of new price
             List<RegistrationInfo> subs = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, itemName);
             String messageToSubs = String.format("PRICE_ADJUSTMENT RQ#%d %s %.2f %d",
                     item.getRequestNumber(), item.getItemName(), item.getCurrentPrice(), item.getTimeRemaining() / 60000);
@@ -171,7 +171,7 @@ public class UDPServer {
                 }
             }
 
-            // ✅ Confirmation to seller
+            // Confirmation to seller
             NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "ACCEPTED " + rqTag);
         } finally {
             auctionLock.unlock();
@@ -199,10 +199,10 @@ public class UDPServer {
                 String auctionLine = FileUtils.getAuctionLine("src/resources/activeAuctions.txt", item.getItemName());
                 if (auctionLine == null) return; // item removed
 
-                // ✅ Create updated item object FIRST
+                // Create updated item object FIRST
                 ItemRegistry updatedItem = ItemRegistry.fromCSV(auctionLine);
 
-                // 🟨 Check negotiation conditions
+                // Check negotiation conditions
                 if (!updatedItem.isNegotiationSent()
                         && updatedItem.getHighestBidder().equals("None")
                         && updatedItem.getTimeRemaining() <= (updatedItem.getDuration() / 2)) {
@@ -220,18 +220,18 @@ public class UDPServer {
                         try {
                             InetAddress sellerAddress = InetAddress.getByName(seller.getIpAddress());
                             NetworkUtils.sendMessageToClient(ds, sellerAddress, seller.getUdpPort(), negotiateMessage);
-                            System.out.println("🔁 Sent NEGOTIATE_REQ to seller: " + seller.getUniqueName());
+                            System.out.println(" Sent NEGOTIATE_REQ to seller: " + seller.getUniqueName());
                         } catch (Exception e) {
                             System.err.println("Error sending negotiation request to seller: " + e.getMessage());
                         }
                     }
 
-                    // ✅ Mark negotiation as sent and persist it
+                    // Mark negotiation as sent and persist it
                     updatedItem.setNegotiationSent(true);
                     FileUtils.updateAuctionLine(ACTIVE_AUCTIONS_FILE, updatedItem.getItemName(), updatedItem.toCSV());
                 }
 
-                // 🟩 Broadcast AUCTION_UPDATE
+                // Broadcast AUCTION_UPDATE
                 List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem("src/resources/subscriptions.txt", item.getItemName());
 
                 String message = String.format("AUCTION_UPDATE RQ#%d,Item: %s,Desc: %s,Price: %.2f,TimeLeft(min): %d",
@@ -269,7 +269,7 @@ public class UDPServer {
         String auctionLine = FileUtils.getAuctionLine("src/resources/activeAuctions.txt", item.getItemName());
         if (auctionLine == null) return; // item removed
 
-        // ✅ Create updated item object FIRST
+        // Create updated item object FIRST
         ItemRegistry updatedItem = ItemRegistry.fromCSV(auctionLine);
 
         endAuction(updatedItem, ds);
@@ -477,7 +477,7 @@ public class UDPServer {
         String itemName = tokens[2].trim();
         String buyerName = tokens[3].trim();
 
-        // 🔐 Check if item exists in active auctions
+        // Check if item exists in active auctions
         if (FileUtils.getAuctionLine("src/resources/activeAuctions.txt", itemName) == null) {
             NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "SUBSCRIPTION-DENIED RQ#" + rqNum + " Reason: Item not found");
             return;

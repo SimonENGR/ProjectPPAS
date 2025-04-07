@@ -37,27 +37,59 @@ public class TCPResponder {
 
     private void promptForCreditCard(Scanner scanner, PrintWriter out, String role) {
         // Check if the role is "buyer" or "seller" and modify the message accordingly
-        if (role.equalsIgnoreCase("buyer")) {
-            System.out.println("Congratulations, you won the auction!");
-        } else if (role.equalsIgnoreCase("seller")) {
-            System.out.println("Your item has been sold to the highest bidder!");
-        }
+//        if (role.equalsIgnoreCase("buyer")) {
+//            System.out.println("Congratulations, you won the auction!");
+//        } else if (role.equalsIgnoreCase("seller")) {
+//            System.out.println("Your item has been sold to the highest bidder!");
+//        }
 
         // Prompt for credit card information
-        System.out.print("Enter simulated credit card info as XXXX XXXX - XX XX: ");
-        String ccInfo = scanner.nextLine();
+        System.out.print("Enter simulated credit card info as XXXX XXXX: ");
+        String ccInfo = scanner.nextLine().trim();
 
-        // Split and validate the card info
-        String[] ccParts = ccInfo.split(" - ");
-        if (ccParts.length == 2 && ccParts[0].matches("\\d{4} \\d{4}") && ccParts[1].matches("\\d{2} \\d{2}")) {
-            String cardNumber = ccParts[0];  // Credit card number in XXXX XXXX format
-            String expiryDate = ccParts[1];  // Expiry date in XX XX format
-
-            // Send the card information to the server
-            out.println("CARD_INFO," + cardNumber + "," + expiryDate);
-            System.out.println("Credit card info sent to server.");
+        // Validate the credit card input
+        if (ccInfo.matches("^\\d{4} \\d{4}$")) {
+            System.out.println("Credit card info entered: " + ccInfo);
         } else {
-            System.out.println("Invalid format. Please enter the credit card info as XXXX XXXX - XX XX.");
+            System.out.println("Invalid credit card format. Please enter it as XXXX XXXX.");
+            return; // Exit or handle as needed
+        }
+
+        // Prompt for expiry date
+        System.out.print("Enter expiry date as XX XX: ");
+        String expiryDate = scanner.nextLine().trim();
+
+        // Validate the expiry date input
+        if (expiryDate.matches("^\\d{2} \\d{2}$")) {
+            System.out.println("Expiry date entered: " + expiryDate);
+        } else {
+            System.out.println("Invalid expiry date format. Please enter it as XX XX.");
+            return; // Exit or handle as needed
+        }
+
+        // Send the card information to the server
+        out.println("CARD_INFO," + ccInfo + "," + expiryDate);
+        System.out.println("Credit card info sent to server.");
+    }
+
+    private void promptForMailingAddress(Scanner scanner, PrintWriter out, String role) {
+        // Prompt for mailing address based on the role
+        System.out.print("Enter your address for mailing: ");
+        String mailingAddress = scanner.nextLine().trim();
+
+        if (mailingAddress != null && !mailingAddress.isEmpty()) {
+            // Send the mailing address to the server
+            out.println("MAILING_ADDRESS," + mailingAddress);
+            System.out.println("Mailing address entered: " + mailingAddress);
+
+            // If buyer, send address to seller for shipping purposes
+            if (role.equalsIgnoreCase("buyer")) {
+                System.out.println("Sending mailing address to seller...");
+                // Simulate sending to seller (this could be modified to use TCP communication)
+                out.println("SELLER," + mailingAddress);
+            }
+        } else {
+            System.out.println("Invalid address. Please try again.");
         }
     }
 
@@ -67,19 +99,38 @@ public class TCPResponder {
                 PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
                 Scanner scanner = new Scanner(System.in)
         ) {
+
             String line;
+
+            boolean auctionEnded = false;
+
             while ((line = in.readLine()) != null) {
                 System.out.println("\nTCP Message from Server: " + line);
 
+
                 // Only respond if it's an auction-ended message
                 if (line.contains("AUCTION_ENDED")) {
-                    String[] parts = line.split(" "); // Split the message into parts
-                    String auctionRequestNumber = parts[1];  // e.g., 161
-                    String itemName = parts[2];               // e.g., panties
-                    String itemDescription = parts[3];        // e.g., red
-                    double finalPrice = Double.parseDouble(parts[4]); // e.g., 26.00
-                    String highestBidderName = parts[5];      // e.g., qwer
-                    int duration = Integer.parseInt(parts[6]); // e.g., 0 (auction duration)
+                    String[] parts = line.split(" ", 2); // Split the message into parts
+
+                    if (parts.length < 2) {
+                        System.err.println("Error: Received message has an invalid format (missing auction data): " + line);
+                        return;
+                    }
+
+                    String auctionData = parts[1]; // The second part contains auction info like "RQ#189,pants,black,150.00,tommas"
+                    String[] auctionDetails = auctionData.split(",");
+
+                    if (auctionDetails.length < 5) {
+                        System.err.println("Error: Auction data is incomplete: " + auctionData);
+                        return;  // Exit early if the message format is invalid
+                    }
+
+                    String auctionRequestNumber = auctionDetails[0];  // e.g., RQ#189
+                    String itemName = auctionDetails[1];               // e.g., pants
+                    String itemDescription = auctionDetails[2];        // e.g., black
+                    double finalPrice = Double.parseDouble(auctionDetails[3]); // e.g., 150.00
+                    String highestBidderName = auctionDetails[4];
+                    int duration = 0;  // Always 0 for auction end
 
                     // Output the parsed details for verification
                     System.out.println("Auction Request Number: " + auctionRequestNumber);
@@ -94,6 +145,7 @@ public class TCPResponder {
                         // Buyer prompt: Congratulations and credit card info
                         System.out.println("Congratulations, you won the auction!");
                         promptForCreditCard(scanner, out, "buyer");
+                        promptForMailingAddress(scanner, out, "buyer" );
                     }
                     // Handle the seller's prompt
                     else if (role.equalsIgnoreCase("seller")) {
@@ -104,6 +156,7 @@ public class TCPResponder {
                             System.out.println("Your item did not meet the reserve price and was not sold.");
                         }
                         promptForCreditCard(scanner, out, "seller");
+                        promptForMailingAddress(scanner, out, "seller");
                     }
                 }
             }

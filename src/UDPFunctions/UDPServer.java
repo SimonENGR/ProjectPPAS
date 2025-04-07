@@ -313,11 +313,12 @@ public class UDPServer {
 
             // TCP message logic for seller
             if (item.getCurrentPrice() >= item.getStartingPrice()) {
-                sellerMessage = String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f",
+                sellerMessage = String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f,%s\nItem sold to %s!",
                         item.getRequestNumber(),
                         item.getItemName(),
                         item.getDescription(),
                         item.getCurrentPrice(),
+                        item.getHighestBidder(),
                         item.getHighestBidder());
             } else {
                 sellerMessage = String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f,%s\nNo sale - item did not meet the reserve price.",

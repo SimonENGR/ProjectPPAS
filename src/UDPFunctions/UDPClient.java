@@ -254,7 +254,7 @@ public class UDPClient {
                     break;
 
                 case "4":
-                    System.out.println("Exiting seller menu...");
+                    System.out.println("Seller Menu exited. Awaiting the end of the auction.");
                     return;
 
                 default:
@@ -360,7 +360,7 @@ public class UDPClient {
                     break;
 
                 case "5":
-                    System.out.println("Exiting...");
+                    System.out.println("Buyer Menu exited. Awaiting the end of the auction.");
                     return;
 
                 default:

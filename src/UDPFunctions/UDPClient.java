@@ -388,7 +388,7 @@ public class UDPClient {
     }
 
     public static void main(String[] args) throws IOException {
-        InetAddress serverIP = InetAddress.getLocalHost();
+        InetAddress serverIP = InetAddress.getLocalHost(); // InetAddress.getByName("69.69.69.69")
 
         int udpPort = 420; // This should match the server's UDP port
 

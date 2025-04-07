@@ -187,7 +187,7 @@ public class UDPClient {
 
                             // Use TCPResponder instead of startTCPListener
                             // Pass the tcpPort entered during registration
-                            TCPResponder tcpResponder = new TCPResponder(Integer.parseInt(tcpPort));
+                            TCPResponder tcpResponder = new TCPResponder(Integer.parseInt(tcpPort), this.role, this.uniqueName);
                             tcpResponder.start();  // Start TCPResponder to handle further TCP communication
 
                         } else {

@@ -313,14 +313,14 @@ public class UDPServer {
 
             // TCP message logic for seller
             if (item.getCurrentPrice() >= item.getStartingPrice()) {
-                sellerMessage = String.format("AUCTION_ENDED, ITEM SOLD RQ#%d,%s,%s,%.2f\nItem sold to %s!",
+                sellerMessage = String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f",
                         item.getRequestNumber(),
                         item.getItemName(),
                         item.getDescription(),
                         item.getCurrentPrice(),
                         item.getHighestBidder());
             } else {
-                sellerMessage = String.format("AUCTION_ENDED, ITEM NOT SOLD RQ#%d,%s,%s,%.2f,%s\nNo sale - item did not meet the reserve price.",
+                sellerMessage = String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f,%s\nNo sale - item did not meet the reserve price.",
                         item.getRequestNumber(),
                         item.getItemName(),
                         item.getDescription(),
@@ -341,7 +341,7 @@ public class UDPServer {
         // Notify the highest bidder over TCP
         RegistrationInfo highestBidder = FileUtils.getUserByName(FILE_PATH, item.getHighestBidder());
         if (highestBidder != null) {
-            String bidderMessage = String.format("AUCTION_ENDED, WINNER WINNER CHICKEN DINNER RQ#%d,%s,%s,%.2f,%s\nCongratulations! You won the auction!",
+            String bidderMessage = String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f,%s\nCongratulations! You won the auction!",
                     item.getRequestNumber(),
                     item.getItemName(),
                     item.getDescription(),

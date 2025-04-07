@@ -102,6 +102,31 @@ public class UDPClient {
         return "";
     }
 
+    private void startTCPListener(int tcpPort) {
+        new Thread(() -> {
+            try (ServerSocket serverSocket = new ServerSocket(tcpPort)) {
+                System.out.println("📡 TCP listener started on port " + tcpPort);
+
+                while (true) {
+                    try (Socket clientSocket = serverSocket.accept();
+                         BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()))) {
+
+                        String line;
+                        while ((line = in.readLine()) != null) {
+                            System.out.println("\n📬 TCP Message Received: " + line);
+                            System.out.print(">> "); // re-prompt
+                        }
+
+                    } catch (IOException e) {
+                        System.err.println("❌ Error in client TCP connection: " + e.getMessage());
+                    }
+                }
+            } catch (IOException e) {
+                System.err.println("❌ Failed to start TCP listener: " + e.getMessage());
+            }
+        }).start();
+    }
+
     public void run() throws IOException {
         String clientIP = InetAddress.getLocalHost().getHostAddress();
         boolean registered = false;
@@ -134,14 +159,13 @@ public class UDPClient {
                         byte[] buf = regMessage.getBytes();
                         socket.send(new DatagramPacket(buf, buf.length, serverAddress, serverPort));
 
-                        String rqTag = extractRequestNumber(regMessage);
                         long startTime = System.currentTimeMillis();
                         String response = null;
 
                         while (System.currentTimeMillis() - startTime < 5000 && response == null) {
                             try {
                                 String msg = responseQueue.poll();
-                                if (msg != null && (rqTag.isEmpty() || msg.contains(rqTag))) {
+                                if (msg != null && (msg.toLowerCase().startsWith("registered") || msg.toLowerCase().startsWith("register-denied"))) {
                                     response = msg;
                                     System.out.println("Server Response: " + response);
                                 } else if (msg != null) {
@@ -155,8 +179,10 @@ public class UDPClient {
                             }
                         }
 
-                        if (response != null && response.toLowerCase().contains("registered")) {
+
+                        if (response != null && response.toLowerCase().startsWith("registered")) {
                             registered = true;
+                            startTCPListener(Integer.parseInt(tcpPort));
 
                         } else {
                             System.out.println("Message is: " + response);
@@ -356,7 +382,7 @@ public class UDPClient {
     }
 
     public static void main(String[] args) throws IOException {
-        InetAddress serverIP = InetAddress.getByName("192.168.2.95");
+        InetAddress serverIP = InetAddress.getLocalHost();
         UDPClient client = new UDPClient(serverIP, 420);
         client.run();
     }

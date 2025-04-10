@@ -65,7 +65,7 @@ public class UDPServer {
                 return;
             }
 
-            double currentBid = Double.parseDouble(auctionTokens[3].trim());
+            double currentBid = Double.parseDouble(auctionTokens[4].trim());
             if (bidAmount <= currentBid) {
                 NetworkUtils.sendMessageToClient(ds, clientIP, clientPort, "BID-DENIED RQ#" + rqNum + " Reason: Bid too low");
                 return;

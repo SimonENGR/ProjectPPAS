@@ -104,113 +104,59 @@ public class UDPClient {
         return "";
     }
 
-    private void startTCPListener(int tcpPort) {
-        new Thread(() -> {
-            try (ServerSocket serverSocket = new ServerSocket(tcpPort)) {
-                System.out.println(" TCP listener started on port " + tcpPort);
-
-                while (true) {
-                    try (Socket clientSocket = serverSocket.accept();
-                         BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()))) {
-
-                        String line;
-                        while ((line = in.readLine()) != null) {
-                            System.out.println("\n TCP Message Received: " + line);
-                            System.out.print(">> "); // re-prompt
-                        }
-
-                    } catch (IOException e) {
-                        System.err.println(" Error in client TCP connection: " + e.getMessage());
-                    }
-                }
-            } catch (IOException e) {
-                System.err.println(" Failed to start TCP listener: " + e.getMessage());
-            }
-        }).start();
-    }
-
     public void run() throws IOException {
         String clientIP = InetAddress.getLocalHost().getHostAddress();
         boolean registered = false;
 
         while (!registered) {
-            System.out.println("\n=== Welcome to the Auction System ===");
-            System.out.println("1. Register new account");
-            System.out.println("2. Deregister existing account");
-            System.out.println("3. Exit");
-            System.out.print("Choose an option: ");
+            System.out.print("Enter your unique name: ");
+            uniqueName = sc.nextLine().trim();
 
-            switch (sc.nextLine().trim()) {
-                case "1":
-                    while (!registered) {
-                        System.out.print("Enter your unique name: ");
-                        uniqueName = sc.nextLine().trim();
+            System.out.print("Enter your role (buyer/seller): ");
+            role = sc.nextLine().trim().toLowerCase();
 
-                        System.out.print("Enter your role (buyer/seller): ");
-                        role = sc.nextLine().trim().toLowerCase();
+            System.out.print("Enter your UDP port: ");
+            String udpPort = sc.nextLine().trim();
 
-                        System.out.print("Enter your UDP port: ");
-                        String udpPort = sc.nextLine().trim();
+            System.out.print("Enter your TCP port: ");
+            String tcpPort = sc.nextLine().trim();
 
-                        System.out.print("Enter your TCP port: ");
-                        String tcpPort = sc.nextLine().trim();
+            String regMessage = String.format("register,%s,%s,%s,%s,%s", uniqueName, role, clientIP, udpPort, tcpPort);
 
-                        String regMessage = String.format("register,%s,%s,%s,%s,%s", uniqueName, role, clientIP, udpPort, tcpPort);
+            // Send registration message
+            byte[] buf = regMessage.getBytes();
+            socket.send(new DatagramPacket(buf, buf.length, serverAddress, serverPort));
 
-                        // Capture the response string and only proceed if registration is accepted
-                        byte[] buf = regMessage.getBytes();
-                        socket.send(new DatagramPacket(buf, buf.length, serverAddress, serverPort));
+            long startTime = System.currentTimeMillis();
+            String response = null;
 
-                        long startTime = System.currentTimeMillis();
-                        String response = null;
-
-                        while (System.currentTimeMillis() - startTime < 5000 && response == null) {
-                            try {
-                                String msg = responseQueue.poll();
-                                if (msg != null && (msg.toLowerCase().startsWith("registered") || msg.toLowerCase().startsWith("register-denied"))) {
-                                    response = msg;
-                                    System.out.println("Server Response: " + response);
-                                } else if (msg != null) {
-                                    System.out.println("Skipping unrelated message: " + msg);
-                                } else {
-                                    Thread.sleep(100);
-                                }
-                            } catch (InterruptedException e) {
-                                System.err.println("Interrupted while waiting for registration response.");
-                                return;
-                            }
-                        }
-
-
-                        if (response != null && response.toLowerCase().startsWith("registered")) {
-                            registered = true;
-
-                            // Use TCPResponder instead of startTCPListener
-                            // Pass the tcpPort entered during registration
-                            TCPResponder tcpResponder = new TCPResponder(Integer.parseInt(tcpPort), this.role, this.uniqueName);
-                            tcpResponder.start();  // Start TCPResponder to handle further TCP communication
-
-                        } else {
-                            System.out.println("Message is: " + response);
-                            System.out.println(" Registration failed (duplicate name or capacity). Try again.");
-                        }
+            while (System.currentTimeMillis() - startTime < 5000 && response == null) {
+                try {
+                    String msg = responseQueue.poll();
+                    if (msg != null && (msg.toLowerCase().startsWith("registered") || msg.toLowerCase().startsWith("register-denied"))) {
+                        response = msg;
+                        System.out.println("Server Response: " + response);
+                    } else if (msg != null) {
+                        System.out.println("Skipping unrelated message: " + msg);
+                    } else {
+                        Thread.sleep(100);
                     }
-                    break;
-
-                case "2":
-                    System.out.print("Enter the unique name to deregister: ");
-                    String deregMsg = "deregister," + sc.nextLine().trim();
-                    sendAndReceive(deregMsg);
-                    break;
-
-                case "3":
-                    System.out.println("Exiting client...");
+                } catch (InterruptedException e) {
+                    System.err.println("Interrupted while waiting for registration response.");
                     socket.close();
-                    sc.close();
                     return;
+                }
+            }
 
-                default:
-                    System.out.println("Invalid option. Try again.");
+            if (response != null && response.toLowerCase().startsWith("registered")) {
+                registered = true;
+
+                TCPResponder tcpResponder = new TCPResponder(Integer.parseInt(tcpPort), this.role, this.uniqueName);
+                tcpResponder.start();
+
+            } else {
+                System.out.println("Message is: " + response);
+                System.out.println(" Registration failed (duplicate name or capacity). Try again.");
             }
         }
 
@@ -221,13 +167,15 @@ public class UDPClient {
         }
     }
 
+
     private void handleSellerActions() throws IOException {
         System.out.println("\n=== Seller Menu ===");
         while (true) {
             System.out.println("\n--- Seller Actions ---");
             System.out.println("1. List an item");
-            System.out.println("2. Handle negotiation requests"); // <== this line
-            System.out.println("3. Exit");
+            System.out.println("2. Handle negotiation requests");
+            System.out.println("3. Deregister and logout");
+            System.out.println("4. Exit");
 
             String choice = sc.nextLine().trim();
             switch (choice) {
@@ -249,14 +197,19 @@ public class UDPClient {
                     break;
 
                 case "3":
+                    deregisterAndRestart();
+                    return;
+
+                case "4":
                     System.out.println("Seller Menu exited. Awaiting the end of the auction.");
                     return;
 
                 default:
-                    System.out.println("Invalid option. Please select 1, 2, or 3.");
+                    System.out.println("Invalid option. Please select 1, 2, 3, or 4.");
             }
         }
     }
+
 
     private void handlePendingNegotiations() {
         if (negotiationQueue.isEmpty()) {
@@ -322,7 +275,8 @@ public class UDPClient {
             System.out.println("1. Subscribe to item");
             System.out.println("2. Unsubscribe from item");
             System.out.println("3. Place a bid");
-            System.out.println("4. Exit");
+            System.out.println("4. Deregister and logout");
+            System.out.println("5. Exit");
             System.out.print("Select option: ");
 
             switch (sc.nextLine().trim()) {
@@ -350,6 +304,10 @@ public class UDPClient {
                     break;
 
                 case "4":
+                    deregisterAndRestart();
+                    return;
+
+                case "5":
                     System.out.println("Buyer Menu exited. Awaiting the end of the auction.");
                     return;
 
@@ -358,6 +316,13 @@ public class UDPClient {
             }
         }
     }
+
+    private void deregisterAndRestart() throws IOException {
+        String deregMsg = "deregister," + uniqueName;
+        sendAndReceive(deregMsg);
+        run(); // Re-prompts for registration
+    }
+
 
     public static void main(String[] args) throws IOException {
         InetAddress serverIP = InetAddress.getLocalHost(); // InetAddress.getByName("69.69.69.69")

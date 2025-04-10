@@ -1,3 +1,3 @@
-wqesdasd,1,192.168.56.1,54450,3,RQ#64
-seller12,seller,192.168.56.1,65321,2,RQ#68
-patrick,seller,192.168.56.1,57028,6,RQ#70
+seller,seller,192.168.56.1,59040,2,RQ#81
+buyer,buyer,192.168.56.1,59041,3,RQ#82
+buyer1,buyer,192.168.56.1,59042,4,RQ#83

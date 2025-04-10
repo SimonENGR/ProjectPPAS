@@ -1,2 +1,0 @@
-dookie,seller1,doo,1.00,1.00,None,60000,1744259520666,true,RQ#46
-do,seller2,do,1.00,1.00,None,60000,1744259628373,true,RQ#48

@@ -312,7 +312,8 @@ public class UDPServer {
             String sellerMessage;
 
             // TCP message logic for seller
-            if (item.getCurrentPrice() >= item.getStartingPrice()) {
+            if (item.getCurrentPrice() >= item.getStartingPrice() && !item.getHighestBidder().equalsIgnoreCase("None"))
+            {
                 sellerMessage = String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f,%s\nItem sold to %s!",
                         item.getRequestNumber(),
                         item.getItemName(),
@@ -381,6 +382,9 @@ public class UDPServer {
             success = false;
         } else if (FileUtils.isDuplicateName(FILE_PATH, regInfo.getUniqueName())) {
             confirmationMessage = "Register-denied RQ#" + requestNumber + " Reason: Duplicate name";
+            success = false;
+        }else if (!regInfo.getRole().equalsIgnoreCase("buyer") && !regInfo.getRole().equalsIgnoreCase("seller")) {
+            confirmationMessage = "Register-denied RQ#" + requestNumber + " Reason: Invalid role";
             success = false;
         } else {
             String entry = String.format("%s,%s,%s,%d,%d,RQ#%d",

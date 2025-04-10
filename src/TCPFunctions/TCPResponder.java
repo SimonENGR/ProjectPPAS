@@ -35,61 +35,50 @@ public class TCPResponder {
         }).start();
     }
 
-    private void promptForCreditCard(Scanner scanner, PrintWriter out, String role) {
-        // Check if the role is "buyer" or "seller" and modify the message accordingly
-//        if (role.equalsIgnoreCase("buyer")) {
-//            System.out.println("Congratulations, you won the auction!");
-//        } else if (role.equalsIgnoreCase("seller")) {
-//            System.out.println("Your item has been sold to the highest bidder!");
-//        }
+    private void promptForCreditCard(BufferedReader reader, PrintWriter out, String role) {
+        try {
+            System.out.print("Enter simulated credit card info as XXXX XXXX: ");
+            String ccInfo = reader.readLine().trim();
 
-        // Prompt for credit card information
-        System.out.print("Enter simulated credit card info as XXXX XXXX: ");
-        String ccInfo = scanner.nextLine().trim();
+            if (!ccInfo.matches("^\\d{4} \\d{4}$")) {
+                System.out.println("Invalid credit card format. Please enter it as XXXX XXXX.");
+                return;
+            }
 
-        // Validate the credit card input
-        if (ccInfo.matches("^\\d{4} \\d{4}$")) {
-            System.out.println("Credit card info entered: " + ccInfo);
-        } else {
-            System.out.println("Invalid credit card format. Please enter it as XXXX XXXX.");
-            return; // Exit or handle as needed
+            System.out.print("Enter expiry date as XX XX: ");
+            String expiryDate = reader.readLine().trim();
+
+            if (!expiryDate.matches("^\\d{2} \\d{2}$")) {
+                System.out.println("Invalid expiry date format. Please enter it as XX XX.");
+                return;
+            }
+
+            out.println("CARD_INFO," + ccInfo + "," + expiryDate);
+            System.out.println("Credit card info sent to server.");
+        } catch (IOException e) {
+            System.err.println("Error reading credit card info: " + e.getMessage());
         }
-
-        // Prompt for expiry date
-        System.out.print("Enter expiry date as XX XX: ");
-        String expiryDate = scanner.nextLine().trim();
-
-        // Validate the expiry date input
-        if (expiryDate.matches("^\\d{2} \\d{2}$")) {
-            System.out.println("Expiry date entered: " + expiryDate);
-        } else {
-            System.out.println("Invalid expiry date format. Please enter it as XX XX.");
-            return; // Exit or handle as needed
-        }
-
-        // Send the card information to the server
-        out.println("CARD_INFO," + ccInfo + "," + expiryDate);
-        System.out.println("Credit card info sent to server.");
     }
 
-    private void promptForMailingAddress(Scanner scanner, PrintWriter out, String role) {
-        // Prompt for mailing address based on the role
-        System.out.print("Enter your address for mailing: ");
-        String mailingAddress = scanner.nextLine().trim();
 
-        if (mailingAddress != null && !mailingAddress.isEmpty()) {
-            // Send the mailing address to the server
-            out.println("MAILING_ADDRESS," + mailingAddress);
-            System.out.println("Mailing address entered: " + mailingAddress);
+    private void promptForMailingAddress(BufferedReader reader, PrintWriter out, String role) {
+        try {
+            System.out.print("Enter your address for mailing: ");
+            String mailingAddress = reader.readLine().trim();
 
-            // If buyer, send address to seller for shipping purposes
-            if (role.equalsIgnoreCase("buyer")) {
-                System.out.println("Sending mailing address to seller...");
-                // Simulate sending to seller (this could be modified to use TCP communication)
-                out.println("SELLER," + mailingAddress);
+            if (!mailingAddress.isEmpty()) {
+                out.println("MAILING_ADDRESS," + mailingAddress);
+                System.out.println("Mailing address entered: " + mailingAddress);
+
+                if (role.equalsIgnoreCase("buyer")) {
+                    System.out.println("Sending mailing address to seller...");
+                    out.println("SELLER," + mailingAddress);
+                }
+            } else {
+                System.out.println("Invalid address. Please try again.");
             }
-        } else {
-            System.out.println("Invalid address. Please try again.");
+        } catch (IOException e) {
+            System.err.println("Error reading mailing address: " + e.getMessage());
         }
     }
 
@@ -97,7 +86,7 @@ public class TCPResponder {
         try (
                 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                 PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-                Scanner scanner = new Scanner(System.in)
+                BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
         ) {
 
             String line;
@@ -144,19 +133,19 @@ public class TCPResponder {
                     if (role.equalsIgnoreCase("buyer") && highestBidderName.equals(uniqueName)) {
                         // Buyer prompt: Congratulations and credit card info
                         System.out.println("Congratulations, you won the auction!");
-                        promptForCreditCard(scanner, out, "buyer");
-                        promptForMailingAddress(scanner, out, "buyer" );
+                        promptForCreditCard(reader, out, "buyer");
+                        promptForMailingAddress(reader, out, "buyer" );
                     }
                     // Handle the seller's prompt
                     else if (role.equalsIgnoreCase("seller")) {
                         // Seller prompt: Item sold message and credit card info
-                        if (finalPrice >= 0) {
+                        if (finalPrice >= 0 && !highestBidderName.equalsIgnoreCase("None")) {
                             System.out.println("Your item has been sold to " + highestBidderName + "!");
+                            promptForCreditCard(reader, out, "seller");
+                            promptForMailingAddress(reader, out, "seller");
                         } else {
                             System.out.println("Your item did not meet the reserve price and was not sold.");
                         }
-                        promptForCreditCard(scanner, out, "seller");
-                        promptForMailingAddress(scanner, out, "seller");
                     }
                 }
             }

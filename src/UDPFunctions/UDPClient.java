@@ -226,9 +226,8 @@ public class UDPClient {
         while (true) {
             System.out.println("\n--- Seller Actions ---");
             System.out.println("1. List an item");
-            System.out.println("2. Listen for auction updates");
-            System.out.println("3. Handle negotiation requests"); // <== this line
-            System.out.println("4. Exit");
+            System.out.println("2. Handle negotiation requests"); // <== this line
+            System.out.println("3. Exit");
 
             String choice = sc.nextLine().trim();
             switch (choice) {
@@ -246,14 +245,10 @@ public class UDPClient {
                     break;
 
                 case "2":
-                    listenForAnnouncements(); // Same method used by buyer
-                    break;
-
-                case "3":
                     handlePendingNegotiations();
                     break;
 
-                case "4":
+                case "3":
                     System.out.println("Seller Menu exited. Awaiting the end of the auction.");
                     return;
 
@@ -326,9 +321,8 @@ public class UDPClient {
             System.out.println("\n--- Buyer Actions ---");
             System.out.println("1. Subscribe to item");
             System.out.println("2. Unsubscribe from item");
-            System.out.println("3. Listen for auction announcements");
-            System.out.println("4. Place a bid");
-            System.out.println("5. Exit");
+            System.out.println("3. Place a bid");
+            System.out.println("4. Exit");
             System.out.print("Select option: ");
 
             switch (sc.nextLine().trim()) {
@@ -347,10 +341,6 @@ public class UDPClient {
                     break;
 
                 case "3":
-                    listenForAnnouncements();
-                    break;
-
-                case "4":
                     System.out.print("Enter item name to bid on: ");
                     String bidItem = sc.nextLine().trim();
                     System.out.print("Enter your bid amount: ");
@@ -359,7 +349,7 @@ public class UDPClient {
                     sendAndReceive(bidMsg);
                     break;
 
-                case "5":
+                case "4":
                     System.out.println("Buyer Menu exited. Awaiting the end of the auction.");
                     return;
 
@@ -367,24 +357,6 @@ public class UDPClient {
                     System.out.println("Invalid option.");
             }
         }
-    }
-
-    private void listenForAnnouncements() {
-        System.out.println("Listening for auction announcements (press Enter to stop)...");
-        Thread listener = new Thread(() -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                try {
-                    String message = responseQueue.take();
-                    System.out.println("Broadcast: " + message);
-                } catch (InterruptedException e) {
-                    break;
-                }
-            }
-        });
-        listener.setDaemon(true);
-        listener.start();
-        sc.nextLine(); // Wait for user to press Enter
-        listener.interrupt();
     }
 
     public static void main(String[] args) throws IOException {

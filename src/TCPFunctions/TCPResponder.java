@@ -170,6 +170,7 @@ public class TCPResponder {
                     System.out.println("Send your item to: " + buyerName);
                     System.out.println("Shipping Address: " + address);
                     System.out.println("Thank you for using the Auction System.");
+                    socket.close();
                 }
 
             }

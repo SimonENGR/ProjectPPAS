@@ -354,11 +354,32 @@ public class UDPServer {
                 String buyerName = buyerTokens[2];
                 String buyerAddress = buyerTokens[5];
 
+                try {
+                    double finalPrice = item.getCurrentPrice();
+                    double serverCut = finalPrice * 0.10;
+                    double sellerCredit = finalPrice * 0.90;
+
+                    System.out.println("[PAYMENT] Charging buyer's card: $" + String.format("%.2f", finalPrice));
+                    System.out.println("[PAYMENT] Crediting seller with $" + String.format("%.2f", sellerCredit));
+                    System.out.println("[PAYMENT] Server keeps $" + String.format("%.2f", serverCut));
+
+                    if (finalPrice <= 0 || buyerName.equalsIgnoreCase("None")) {
+                        throw new Exception("Simulated transaction failure");
+                    }
+
+                } catch (Exception e) {
+                    System.err.println("Transaction failed: " + e.getMessage());
+                    informBuyer.sendMessage("CANCEL,RQ#" + finalizeRqNum + ",Reason: Transaction failed");
+                    informSeller.sendMessage("CANCEL,RQ#" + finalizeRqNum + ",Reason: Transaction failed");
+                    informBuyer.close();
+                    informSeller.close();
+                    return;
+                }
+
                 String shippingInfo = String.format("Shipping_Info,RQ#%d,%s,%s", finalizeRqNum, buyerName, buyerAddress);
                 informSeller.sendMessage(shippingInfo);
 
                 informBuyer.close();
-                informSeller.close();
 
             } catch (IOException e) {
                 System.err.println("Error finalizing transaction: " + e.getMessage());

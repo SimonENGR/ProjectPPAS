@@ -129,7 +129,7 @@ public class TCPResponder {
 
                 }
                 else if (line.startsWith("INFORM_Req")) {
-                    String[] tokens = line.split(" ");
+                    String[] tokens = line.split(",");
                     if (tokens.length != 4) {
                         System.err.println("Invalid INFORM_Req format: " + line);
                         return;
@@ -152,7 +152,7 @@ public class TCPResponder {
                     String address = reader.readLine().trim();
 
                     // Send INFORM_Res to server
-                    String response = String.format("INFORM_Res %s %s %s %s %s", rqNum, uniqueName, ccNumber, expiry, address);
+                    String response = String.format("INFORM_Res,%s,%s,%s,%s,%s", rqNum, uniqueName, ccNumber, expiry, address);
                     out.println(response);
                 }
                 else if (line.startsWith("Shipping_Info")) {

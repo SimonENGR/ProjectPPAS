@@ -285,7 +285,7 @@ public class UDPServer {
     public void endAuction(ItemRegistry item, DatagramSocket ds) {
         // Generate new RQ# for the purchase finalization
         int finalizeRqNum = requestCounter.getAndIncrement();
-        String informReq = String.format("INFORM_Req RQ#%d %s %.2f", finalizeRqNum, item.getItemName(), item.getCurrentPrice());
+        String informReq = String.format("INFORM_Req,RQ#%d,%s,%.2f", finalizeRqNum, item.getItemName(), item.getCurrentPrice());
 
         List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, item.getItemName());
 
@@ -352,9 +352,9 @@ public class UDPServer {
 
                 String[] buyerTokens = buyerResponse.split(",");
                 String buyerName = buyerTokens[2];
-                String buyerAddress = buyerTokens[6];
+                String buyerAddress = buyerTokens[5];
 
-                String shippingInfo = String.format("Shipping_Info RQ#%d %s %s", finalizeRqNum, buyerName, buyerAddress);
+                String shippingInfo = String.format("Shipping_Info,RQ#%d,%s,%s", finalizeRqNum, buyerName, buyerAddress);
                 informSeller.sendMessage(shippingInfo);
 
                 informBuyer.close();

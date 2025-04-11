@@ -22,6 +22,10 @@ public class TCPConnection {
         return in.readLine();  // Read the response from the server (if any)
     }
 
+    public String readLine() throws IOException {
+        return in.readLine();
+    }
+
     public void close() throws IOException {
         out.close();
         in.close();

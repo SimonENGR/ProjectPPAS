@@ -99,14 +99,7 @@ public class TCPResponder {
 
                 // Only respond if it's an auction-ended message
                 if (line.contains("AUCTION_ENDED")) {
-                    String[] parts = line.split(" ", 2); // Split the message into parts
-
-                    if (parts.length < 2) {
-                        System.err.println("Error: Received message has an invalid format (missing auction data): " + line);
-                        return;
-                    }
-
-                    String auctionData = parts[1]; // The second part contains auction info like "RQ#189,pants,black,150.00,tommas"
+                    String auctionData = line.substring("AUCTION_ENDED ".length());
                     String[] auctionDetails = auctionData.split(",");
 
                     if (auctionDetails.length < 5) {
@@ -130,24 +123,55 @@ public class TCPResponder {
                     System.out.println("Auction Duration: " + duration);
 
                     // Handle the buyer's prompt if the user is the highest bidder
-                    if (role.equalsIgnoreCase("buyer") && highestBidderName.equals(uniqueName)) {
-                        // Buyer prompt: Congratulations and credit card info
-                        System.out.println("Congratulations, you won the auction!");
-                        promptForCreditCard(reader, out, "buyer");
-                        promptForMailingAddress(reader, out, "buyer" );
+                    if (line.contains("AUCTION_ENDED")) {
+                        System.out.println("Auction ended: " + line);
                     }
-                    // Handle the seller's prompt
-                    else if (role.equalsIgnoreCase("seller")) {
-                        // Seller prompt: Item sold message and credit card info
-                        if (finalPrice >= 0 && !highestBidderName.equalsIgnoreCase("None")) {
-                            System.out.println("Your item has been sold to " + highestBidderName + "!");
-                            promptForCreditCard(reader, out, "seller");
-                            promptForMailingAddress(reader, out, "seller");
-                        } else {
-                            System.out.println("Your item did not meet the reserve price and was not sold.");
-                        }
-                    }
+
                 }
+                else if (line.startsWith("INFORM_Req")) {
+                    String[] tokens = line.split(" ");
+                    if (tokens.length != 4) {
+                        System.err.println("Invalid INFORM_Req format: " + line);
+                        return;
+                    }
+
+                    String rqNum = tokens[1];
+                    String itemName = tokens[2];
+                    String finalPrice = tokens[3];
+
+                    System.out.println("\n=== Finalizing Purchase ===");
+                    System.out.println("Item: " + itemName + ", Final Price: $" + finalPrice);
+
+                    System.out.print("Enter credit card number (XXXX XXXX): ");
+                    String ccNumber = reader.readLine().trim();
+
+                    System.out.print("Enter expiry date (MM YY): ");
+                    String expiry = reader.readLine().trim();
+
+                    System.out.print("Enter shipping address (e.g., 123/Maple/City/Country — no commas): ");
+                    String address = reader.readLine().trim();
+
+                    // Send INFORM_Res to server
+                    String response = String.format("INFORM_Res %s %s %s %s %s", rqNum, uniqueName, ccNumber, expiry, address);
+                    out.println(response);
+                }
+                else if (line.startsWith("Shipping_Info")) {
+                    String[] tokens = line.split(",", 4);
+                    if (tokens.length != 4) {
+                        System.err.println("Invalid Shipping_Info format: " + line);
+                        return;
+                    }
+
+                    String rq = tokens[1];
+                    String buyerName = tokens[2];
+                    String address = tokens[3];
+
+                    System.out.println("\n=== Shipping Info Received ===");
+                    System.out.println("Send your item to: " + buyerName);
+                    System.out.println("Shipping Address: " + address);
+                    System.out.println("Thank you for using the Auction System.");
+                }
+
             }
         } catch (IOException e) {
             System.err.println("Error handling TCP message: " + e.getMessage());

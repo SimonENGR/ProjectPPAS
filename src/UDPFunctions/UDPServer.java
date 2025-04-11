@@ -49,6 +49,13 @@ public class UDPServer {
             return;
         }
 
+        RegistrationInfo bidderInfo = FileUtils.getUserByName(FILE_PATH, bidderName);
+        if (bidderInfo == null || !FileUtils.isAlreadySubscribed(SUBSCRIPTION_FILE, itemName, bidderInfo)) {
+            NetworkUtils.sendMessageToClient(ds, clientIP, clientPort,
+                    "BID-DENIED RQ#" + rqNum + " Reason: You must subscribe to this item before bidding");
+            return;
+        }
+
         auctionLock.lock();
         try {
             String auctionLine = FileUtils.getAuctionLine(ACTIVE_AUCTIONS_FILE, itemName);
@@ -276,15 +283,11 @@ public class UDPServer {
     }
 
     public void endAuction(ItemRegistry item, DatagramSocket ds) {
-        List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, item.getItemName());
+        // Generate new RQ# for the purchase finalization
+        int finalizeRqNum = requestCounter.getAndIncrement();
+        String informReq = String.format("INFORM_Req RQ#%d %s %.2f", finalizeRqNum, item.getItemName(), item.getCurrentPrice());
 
-//        String message = String.format("AUCTION_ENDED %s %s %s %.2f %d",
-//                item.getRequestNumber(),
-//                item.getItemName(),
-//                item.getDescription(),
-//                item.getStartingPrice(), // Final price (you might consider using the final bid)
-//                0
-//        );
+        List<RegistrationInfo> subscribedBuyers = FileUtils.getSubscribersForItem(SUBSCRIPTION_FILE, item.getItemName());
 
         String message = String.format("AUCTION_ENDED FIRST ANNOUNCEMENT %s %s %s %.2f %s %d",
                 item.getRequestNumber(),
@@ -308,55 +311,73 @@ public class UDPServer {
 
         // Notify the seller over TCP
         RegistrationInfo seller = FileUtils.getUserByName(FILE_PATH, item.getSellerName());
-        if (seller != null) {
-            String sellerMessage;
+        RegistrationInfo highestBidder = FileUtils.getUserByName(FILE_PATH, item.getHighestBidder());
 
-            // TCP message logic for seller
-            if (item.getCurrentPrice() >= item.getStartingPrice() && !item.getHighestBidder().equalsIgnoreCase("None"))
-            {
-                sellerMessage = String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f,%s\nItem sold to %s!",
+        boolean saleValid = item.getCurrentPrice() >= item.getStartingPrice() && !item.getHighestBidder().equalsIgnoreCase("None");
+
+        if (saleValid && seller != null && highestBidder != null) {
+            try {
+                TCPConnection informBuyer = new TCPConnection(highestBidder.getIpAddress(), highestBidder.getTcpPort());
+                TCPConnection informSeller = new TCPConnection(seller.getIpAddress(), seller.getTcpPort());
+
+                informBuyer.sendMessage(String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f,%s\nCongratulations! You won the auction!",
+                        item.getRequestNumber(),
+                        item.getItemName(),
+                        item.getDescription(),
+                        item.getCurrentPrice(),
+                        item.getHighestBidder()));
+
+                informSeller.sendMessage(String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f,%s\nItem sold to %s!",
                         item.getRequestNumber(),
                         item.getItemName(),
                         item.getDescription(),
                         item.getCurrentPrice(),
                         item.getHighestBidder(),
-                        item.getHighestBidder());
-            } else {
-                sellerMessage = String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f,%s\nNo sale - item did not meet the reserve price.",
-                        item.getRequestNumber(),
-                        item.getItemName(),
-                        item.getDescription(),
-                        item.getCurrentPrice(),
-                        item.getHighestBidder());
-            }
+                        item.getHighestBidder()));
 
-            // TCP Connection to the seller
-            try {
-                TCPConnection tcpSellerConnection = new TCPConnection(seller.getIpAddress(), seller.getTcpPort());
-                tcpSellerConnection.sendMessage(sellerMessage);  // Send the seller message via TCP
-                tcpSellerConnection.close();
+                informBuyer.sendMessage(informReq);
+                informSeller.sendMessage(informReq);
+
+                String buyerResponse = informBuyer.readLine();
+                String sellerResponse = informSeller.readLine();
+
+                if (buyerResponse == null || sellerResponse == null ||
+                        !buyerResponse.startsWith("INFORM_Res") || !sellerResponse.startsWith("INFORM_Res")) {
+                    informBuyer.sendMessage("CANCEL RQ#" + finalizeRqNum + " Reason: Invalid or no response");
+                    informSeller.sendMessage("CANCEL RQ#" + finalizeRqNum + " Reason: Invalid or no response");
+                    informBuyer.close();
+                    informSeller.close();
+                    return;
+                }
+
+                String[] buyerTokens = buyerResponse.split(",");
+                String buyerName = buyerTokens[2];
+                String buyerAddress = buyerTokens[6];
+
+                String shippingInfo = String.format("Shipping_Info RQ#%d %s %s", finalizeRqNum, buyerName, buyerAddress);
+                informSeller.sendMessage(shippingInfo);
+
+                informBuyer.close();
+                informSeller.close();
+
             } catch (IOException e) {
-                System.err.println("Error sending TCP message to seller " + seller.getUniqueName());
+                System.err.println("Error finalizing transaction: " + e.getMessage());
             }
-        }
-
-        // Notify the highest bidder over TCP
-        RegistrationInfo highestBidder = FileUtils.getUserByName(FILE_PATH, item.getHighestBidder());
-        if (highestBidder != null) {
-            String bidderMessage = String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f,%s\nCongratulations! You won the auction!",
-                    item.getRequestNumber(),
-                    item.getItemName(),
-                    item.getDescription(),
-                    item.getCurrentPrice(),
-                    item.getHighestBidder());
-
-            // TCP Connection to the highest bidder
-            try {
-                TCPConnection tcpBidderConnection = new TCPConnection(highestBidder.getIpAddress(), highestBidder.getTcpPort());
-                tcpBidderConnection.sendMessage(bidderMessage);  // Send the winner message via TCP
-                tcpBidderConnection.close();
-            } catch (IOException e) {
-                System.err.println("Error sending TCP message to highest bidder " + highestBidder.getUniqueName());
+        } else {
+            if (seller != null) {
+                try {
+                    TCPConnection tcpSellerConnection = new TCPConnection(seller.getIpAddress(), seller.getTcpPort());
+                    String noSale = String.format("AUCTION_ENDED RQ#%d,%s,%s,%.2f,%s\nNo sale - item did not meet the reserve price.",
+                            item.getRequestNumber(),
+                            item.getItemName(),
+                            item.getDescription(),
+                            item.getCurrentPrice(),
+                            item.getHighestBidder());
+                    tcpSellerConnection.sendMessage(noSale);
+                    tcpSellerConnection.close();
+                } catch (IOException e) {
+                    System.err.println("Error notifying seller of no sale: " + e.getMessage());
+                }
             }
         }
 
